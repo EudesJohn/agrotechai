@@ -1,8 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { db } from '../firebase'
-import { doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, limit, serverTimestamp, updateDoc, increment, deleteDoc } from 'firebase/firestore'
+import { supabase } from '../supabase'
 import { useAuthStore } from '../authStore'
 import QuickMessageModal from '../components/QuickMessageModal.vue'
 import gsap from 'gsap'
@@ -37,23 +36,23 @@ const openSocialModal = async (type) => {
   showSocialModal.value = true
   socialList.value = []
   socialListLoading.value = true
-  
+
   try {
     const userId = route.params.userId
-    const field = type === 'followers' ? 'followedId' : 'followerId'
-    const q = query(collection(db, 'follows'), where(field, '==', userId), limit(50))
-    const snap = await getDocs(q)
-    
-    const userIds = snap.docs.map(d => type === 'followers' ? d.data().followerId : d.data().followedId)
-    
+    const fieldName = type === 'followers' ? 'following_id' : 'follower_id'
+    const { data: follows } = await supabase.from('follows').select('*').eq(fieldName, userId).limit(50)
+
+    const userIds = (follows || []).map(f => type === 'followers' ? f.follower_id : f.following_id)
+
     if (userIds.length > 0) {
-      // Pour éviter trop de requêtes, on limite à 20 pour l'instant
       const limitedIds = userIds.slice(0, 20)
-      const profiles = await Promise.all(limitedIds.map(async id => {
-        const uSnap = await getDoc(doc(db, 'users', id))
-        return uSnap.exists() ? { uid: id, ...uSnap.data() } : null
+      const { data: profiles } = await supabase.from('profiles').select('*').in('id', limitedIds)
+      socialList.value = (profiles || []).map(p => ({
+        uid: p.id,
+        displayName: p.display_name,
+        photoURL: p.avatar_url,
+        user_type: p.user_type
       }))
-      socialList.value = profiles.filter(p => p !== null)
     }
   } catch (err) {
     console.error("Social list error", err)
@@ -65,17 +64,27 @@ const openSocialModal = async (type) => {
 const fetchPublicProfile = async () => {
   try {
     const userId = route.params.userId
-    const docRef = doc(db, 'users', userId)
-    const docSnap = await getDoc(docRef)
-    if (docSnap.exists()) {
-      profile.value = { uid: userId, ...docSnap.data() }
-      
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
+
+    if (data && !error) {
+      profile.value = {
+        uid: data.id,
+        displayName: data.display_name,
+        photoURL: data.avatar_url,
+        followersCount: data.followers_count,
+        followingCount: data.following_count,
+        bio: data.bio,
+        user_type: data.user_type,
+        location: data.location,
+        experience: data.experience
+      }
+
       // Check if following
       if (authStore.user) {
-        const followSnap = await getDoc(doc(db, 'follows', `${authStore.user.uid}_${userId}`))
-        isFollowing.value = followSnap.exists()
+        const { data: follow } = await supabase.from('follows').select('*').eq('follower_id', authStore.user.id).eq('following_id', userId).maybeSingle()
+        isFollowing.value = !!follow
       }
-      
+
       fetchUserPosts(userId)
     }
   } catch (err) {
@@ -87,11 +96,16 @@ const fetchPublicProfile = async () => {
 
 const fetchUserPosts = async (userId) => {
   try {
-    // Remove orderBy to ensure visibility without indexes
-    const q = query(collection(db, 'posts'), where('authorId', '==', userId), limit(10))
-    const snap = await getDocs(q)
-    userPosts.value = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)) // Local sort
+    const { data: postsData } = await supabase.from('posts').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(10)
+    userPosts.value = (postsData || []).map(p => ({
+      id: p.id,
+      authorId: p.user_id,
+      content: p.content,
+      image_url: p.image_url,
+      createdAt: p.created_at,
+      commentsCount: p.comments_count,
+      reactionsCount: p.reactions_count
+    }))
   } catch (err) {
     console.error("Posts error", err)
   } finally {
@@ -105,49 +119,38 @@ const toggleFollow = async () => {
     return
   }
   if (followLoading.value) return
-  
+
   const userId = profile.value.uid
-  const followRef = doc(db, 'follows', `${authStore.user.uid}_${userId}`)
   followLoading.value = true
-  
+
   try {
     if (isFollowing.value) {
       // Optimistic update
       isFollowing.value = false
       profile.value.followersCount = Math.max(0, (profile.value.followersCount || 0) - 1)
-      
-      await deleteDoc(followRef)
-      await updateDoc(doc(db, 'users', userId), { followersCount: increment(-1) })
-      await updateDoc(doc(db, 'users', authStore.user.uid), { followingCount: increment(-1) })
+
+      const { error } = await supabase.from('follows').delete().eq('follower_id', authStore.user.id).eq('following_id', userId)
+      if (error) throw error
     } else {
       // Optimistic update
       isFollowing.value = true
       profile.value.followersCount = (profile.value.followersCount || 0) + 1
-      
-      await setDoc(followRef, {
-        followerId: authStore.user.uid,
-        followedId: userId,
-        createdAt: serverTimestamp()
-      })
-      await updateDoc(doc(db, 'users', userId), { followersCount: increment(1) })
-      await updateDoc(doc(db, 'users', authStore.user.uid), { followingCount: increment(1) })
+
+      const { error } = await supabase.from('follows').insert({ follower_id: authStore.user.id, following_id: userId })
+      if (error) throw error
     }
   } catch (err) {
     console.error("DEBUG FOLLOW ERROR DETAILS:", {
       code: err.code,
       message: err.message,
       targetUid: userId,
-      currentUser: authStore.user?.uid
+      currentUser: authStore.user?.id
     })
     // Rollback on error
     isFollowing.value = !isFollowing.value
     profile.value.followersCount += isFollowing.value ? 1 : -1
-    
-    if (err.code === 'failed-precondition') {
-      alert("Index Firestore manquant. Veuillez créer l'index requis pour les abonnements dans la console Firebase.")
-    } else {
-      alert("Une erreur est survenue lors du changement d'abonnement. Vérifiez votre connexion.")
-    }
+
+    alert("Une erreur est survenue lors du changement d'abonnement. Vérifiez votre connexion.")
   } finally {
     followLoading.value = false
   }
@@ -200,7 +203,7 @@ onMounted(() => {
 
         <div class="profile-actions-top">
            <button 
-             v-if="!authStore.user || authStore.user.uid !== profile.uid"
+             v-if="!authStore.user || authStore.user.id !== profile.uid"
              class="btn btn-premium btn-follow-new" 
              :class="{ 'followed-state': isFollowing }" 
              @click="toggleFollow" 
@@ -214,7 +217,7 @@ onMounted(() => {
              </template>
            </button>
                       <button 
-              v-if="authStore.user && authStore.user.uid !== profile.uid" 
+              v-if="authStore.user && authStore.user.id !== profile.uid" 
               class="btn btn-premium btn-message-new" 
               @click="openQuickMsg"
             >

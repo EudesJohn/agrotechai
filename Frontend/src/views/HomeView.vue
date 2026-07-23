@@ -5,8 +5,7 @@ import { onMounted, ref, inject, computed } from 'vue'
 import { useAuthStore } from '../authStore'
 import gsap from 'gsap'
 import ScrollTrigger from 'gsap/ScrollTrigger'
-import { db } from '../firebase'
-import { collection, query, orderBy, limit, getDocs, getDoc, doc, updateDoc, increment, setDoc, addDoc, serverTimestamp, deleteDoc } from 'firebase/firestore'
+import { supabase } from '../supabase'
 import { plantDatabase } from '../plantData'
 import DOMPurify from 'dompurify'
 import api from '../api'
@@ -158,28 +157,60 @@ const hidePop = (post) => {
 
 const fetchRecentPosts = async () => {
   try {
-    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(3))
-    const snap = await getDocs(q)
-    recentPosts.value = await Promise.all(snap.docs.map(async docSnapshot => {
-      const data = docSnapshot.data()
-      const postId = docSnapshot.id
-      
-      let userReaction = null
-      if (isAuthenticated.value) {
-        const rSnap = await getDoc(doc(db, 'posts', postId, 'reactions', authStore.user.uid))
-        if (rSnap.exists()) userReaction = rSnap.data().type
+    const { data: posts, error } = await supabase
+      .from('posts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(3)
+
+    if (error) throw error
+
+    recentPosts.value = await Promise.all((posts || []).map(async (post) => {
+      // Charger le profil de l'auteur
+      let authorName = 'Expert'
+      let authorPic = ''
+      let authorId = post.user_id
+      if (post.user_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('display_name, avatar_url')
+          .eq('id', post.user_id)
+          .single()
+        if (profile) {
+          authorName = profile.display_name || 'Expert'
+          authorPic = profile.avatar_url || ''
+        }
       }
 
-      return { 
-        id: postId, 
-        ...data, 
-        showPop: false, 
-        showComments: false, 
-        comments: [], 
+      // Vérifier la réaction de l'utilisateur connecté
+      let userReaction = null
+      if (isAuthenticated.value) {
+        const { data: reaction } = await supabase
+          .from('post_reactions')
+          .select('reaction_type')
+          .eq('post_id', post.id)
+          .eq('user_id', authStore.user.id)
+          .maybeSingle()
+        userReaction = reaction?.reaction_type || null
+      }
+
+      return {
+        id: post.id,
+        authorId,
+        authorName,
+        authorPic,
+        content: post.content,
+        image_url: post.image_url || '',
+        reactionsCount: post.reactions_count || {},
+        commentsCount: post.comments_count || 0,
+        tags: post.tags || [],
+        createdAt: post.created_at,
+        showPop: false,
+        showComments: false,
+        comments: [],
         newComment: '',
         replyTo: null,
         userReaction,
-        reactionsCount: data.reactionsCount || {}
       }
     }))
     
@@ -209,22 +240,19 @@ const toggleReaction = async (postId, type) => {
   if (!post) return
 
   try {
-    const reactionRef = doc(db, 'posts', postId, 'reactions', authStore.user.uid)
-    const postRef = doc(db, 'posts', postId)
-    
     if (post.userReaction === type) {
-      await deleteDoc(reactionRef)
-      await updateDoc(postRef, { [`reactionsCount.${type}`]: increment(-1) })
-      post.reactionsCount[type] -= 1
+      // Supprimer la réaction (le trigger PostgreSQL met à jour reactions_count)
+      await supabase.from('post_reactions').delete()
+        .eq('post_id', postId)
+        .eq('user_id', authStore.user.id)
       post.userReaction = null
     } else {
-      const oldType = post.userReaction
-      await setDoc(reactionRef, { type, userId: authStore.user.uid })
-      const updateData = { [`reactionsCount.${type}`]: increment(1) }
-      if (oldType) updateData[`reactionsCount.${oldType}`] = increment(-1)
-      await updateDoc(postRef, updateData)
-      post.reactionsCount[type] = (post.reactionsCount[type] || 0) + 1
-      if (oldType) post.reactionsCount[oldType] -= 1
+      // Ajouter ou changer la réaction
+      await supabase.from('post_reactions').upsert({
+        post_id: postId,
+        user_id: authStore.user.id,
+        reaction_type: type,
+      }, { onConflict: 'post_id,user_id' })
       post.userReaction = type
     }
   } catch (err) {
@@ -238,14 +266,17 @@ const toggleComments = async (postId) => {
   if (!post) return
   post.showComments = !post.showComments
   if (post.showComments && post.comments.length === 0) {
-    const q = query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'asc'))
-    const snap = await getDocs(q)
-    post.comments = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    // Track view
-    try {
-      await updateDoc(doc(db, 'posts', postId), { views: increment(1) })
-      post.views = (post.views || 0) + 1
-    } catch (e) {}
+    const { data: comments } = await supabase
+      .from('post_comments')
+      .select('*')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true })
+    post.comments = (comments || []).map(c => ({
+      id: c.id,
+      authorId: c.user_id,
+      content: c.content,
+      createdAt: c.created_at,
+    }))
   }
 }
 
@@ -255,16 +286,24 @@ const addComment = async (postId) => {
   if (!post || !post.newComment) return
 
   try {
-    const commentData = {
-      authorId: authStore.user.uid,
-      authorName: authStore.profile?.displayName || 'Expert',
-      authorPic: authStore.profile?.photoURL || '',
+    const { data: newComment, error } = await supabase
+      .from('post_comments')
+      .insert({
+        post_id: postId,
+        user_id: authStore.user.id,
+        content: post.newComment,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    post.comments.push({
+      id: newComment.id,
+      authorId: authStore.user.id,
       content: post.newComment,
-      createdAt: serverTimestamp()
-    }
-    const docRef = await addDoc(collection(db, 'posts', postId, 'comments'), commentData)
-    await updateDoc(doc(db, 'posts', postId), { commentsCount: increment(1) })
-    post.comments.push({ id: docRef.id, ...commentData, createdAt: new Date() })
+      createdAt: newComment.created_at,
+    })
     post.newComment = ''
     post.replyTo = null
     post.commentsCount = (post.commentsCount || 0) + 1

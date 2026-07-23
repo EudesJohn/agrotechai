@@ -69,8 +69,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { db } from '../firebase'
-import { collection, addDoc, getDocs, query, orderBy, serverTimestamp } from 'firebase/firestore'
+import { supabase } from '../supabase'
 import { useAuthStore } from '../authStore'
 import gsap from 'gsap'
 
@@ -97,11 +96,26 @@ const filteredProducts = computed(() => {
 const fetchProducts = async () => {
   loading.value = true
   try {
-    const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'))
-    const snap = await getDocs(q)
-    products.value = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    const { data, error: err } = await supabase
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (err) throw err
+    products.value = (data || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      price: p.price,
+      quantity: p.quantity,
+      location: p.location,
+      seller_name: p.seller_name,
+      seller_phone: p.phone,
+      seller_type: p.seller_type,
+      image_url: p.image_url,
+      createdAt: p.created_at,
+    }))
   } catch (err) {
-    console.error('Error Firestore Market', err)
+    console.error('Erreur chargement produits', err)
   } finally {
     loading.value = false
     setTimeout(() => {
@@ -114,19 +128,21 @@ const publishProduct = async () => {
   if (!authStore.user) return
   publishing.value = true
   try {
-    const productData = {
-      ...newProduct.value,
-      seller_id: authStore.user.uid,
-      seller_name: authStore.profile?.displayName || authStore.user.displayName || 'Expert',
-      seller_phone: authStore.profile?.phone_number || '',
-      seller_type: authStore.profile?.user_type || 'FARMER',
-      createdAt: serverTimestamp()
-    }
-    await addDoc(collection(db, 'products'), productData)
+    const { error: err } = await supabase.from('products').insert({
+      name: newProduct.value.name,
+      description: newProduct.value.description,
+      price: parseFloat(newProduct.value.price) || 0,
+      category: 'general',
+      seller_id: authStore.user.id,
+      location: newProduct.value.location,
+      phone: authStore.profile?.phone_number || '',
+      tags: [newProduct.value.quantity].filter(Boolean),
+    })
+    if (err) throw err
     Object.assign(newProduct.value, { name: '', description: '', quantity: '', price: '', location: '' })
     fetchProducts()
   } catch (err) {
-    alert("Erreur de publication Firestore.")
+    alert("Erreur de publication: " + (err.message || 'Erreur inconnue'))
   } finally {
     publishing.value = false
   }

@@ -1,7 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { db } from '../firebase'
-import { doc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { supabase } from '../supabase'
 import { useAuthStore } from '../authStore'
 
 const props = defineProps({
@@ -21,22 +20,23 @@ const handleSend = async () => {
   
   loading.value = true
   try {
-    const participants = [authStore.user.uid, props.partnerId].sort()
+    const participants = [authStore.user.id, props.partnerId].sort()
     const chatId = participants.join('_')
-    
-    // 1. Update/Create Chat Doc
-    await setDoc(doc(db, 'chats', chatId), {
-      participants,
-      lastMessage: message.value,
-      lastUpdate: serverTimestamp(),
-      lastSenderId: authStore.user.uid
-    }, { merge: true })
 
-    // 2. Add Message to Subcollection
-    await addDoc(collection(db, 'chats', chatId, 'messages'), {
-      senderId: authStore.user.uid,
-      text: message.value,
-      createdAt: serverTimestamp()
+    // 1. Update/Create Chat Doc
+    await supabase.from('chats').upsert({
+      id: chatId,
+      participants,
+      last_message: message.value,
+      last_message_sender_id: authStore.user.id,
+    })
+
+    // 2. Add Message to chat_messages table
+    await supabase.from('chat_messages').insert({
+      chat_id: chatId,
+      sender_id: authStore.user.id,
+      content: message.value,
+      message_type: 'text',
     })
 
     message.value = ''

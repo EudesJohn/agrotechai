@@ -1,49 +1,51 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { auth, db } from '../firebase'
-import { collection, query, orderBy, getDocs } from 'firebase/firestore'
+import { supabase } from '../supabase'
+import { useAuthStore } from '../authStore'
 import gsap from 'gsap'
 
+const authStore = useAuthStore()
 const historyList = ref([])
 const loading = ref(true)
 const error = ref(null)
 
 const fetchHistory = async () => {
-  const user = auth.currentUser
+  const user = authStore.user
   if (!user) {
     loading.value = false
     return
   }
   try {
-    // Récupération de l'historique des scans depuis Firebase
-    const q = query(collection(db, 'users', user.uid, 'history'), orderBy('date', 'desc'))
-    const snap = await getDocs(q)
-    historyList.value = snap.docs.map(doc => {
-      const data = doc.data()
-      return {
-        id: doc.id,
-        ...data,
-        formattedDate: data.date ? new Date(data.date.toDate()).toLocaleDateString('fr-FR', {
-          day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
-        }) : 'Date inconnue'
-      }
-    })
+    // Récupération de l'historique des scans depuis Supabase
+    const { data, error: err } = await supabase
+      .from('scan_history')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+
+    if (err) throw err
+    historyList.value = (data || []).map(item => ({
+      id: item.id,
+      ...item,
+      image: item.image_url,
+      formattedDate: item.created_at ? new Date(item.created_at).toLocaleDateString('fr-FR', {
+        day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      }) : 'Date inconnue'
+    }))
   } catch (err) {
     console.error("Erreur chargement historique:", err)
-    error.value = "Impossible de charger votre historique. Vérifiez votre connexion Firestore."
+    error.value = "Impossible de charger votre historique."
   } finally {
     loading.value = false
   }
 }
 
 onMounted(() => {
-  auth.onAuthStateChanged((user) => {
-    if (user) {
-      fetchHistory()
-    } else {
-      loading.value = false
-    }
-  })
+  if (authStore.user) {
+    fetchHistory()
+  } else {
+    loading.value = false
+  }
   gsap.from(".history-title", { y: -30, opacity: 0, duration: 1, ease: "power3.out" })
   gsap.from(".prod-card", {
     y: 50, opacity: 0, duration: 0.8, stagger: 0.1, delay: 0.3, ease: "back.out(1.4)"

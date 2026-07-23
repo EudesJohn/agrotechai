@@ -3,9 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useAuthStore } from '../authStore'
 import { useRouter } from 'vue-router'
 import { sectors, communesBenin } from '../constants'
-import { storage, db } from '../firebase'
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { doc, updateDoc, collection, query, where, getDocs, limit, getDoc } from 'firebase/firestore'
+import { supabase } from '../supabase'
 import gsap from 'gsap'
 
 const authStore = useAuthStore()
@@ -37,22 +35,31 @@ const openSocialModal = async (type) => {
   showSocialModal.value = true
   socialList.value = []
   socialListLoading.value = true
-  
+
   try {
-    const userId = authStore.user.uid
-    const field = type === 'followers' ? 'followedId' : 'followerId'
-    const q = query(collection(db, 'follows'), where(field, '==', userId), limit(50))
-    const snap = await getDocs(q)
-    
-    const userIds = snap.docs.map(d => type === 'followers' ? d.data().followerId : d.data().followedId)
-    
+    const userId = authStore.user.id
+    const field = type === 'followers' ? 'following_id' : 'follower_id'
+    const { data: follows } = await supabase
+      .from('follows')
+      .select('follower_id, following_id')
+      .eq(field, userId)
+      .limit(50)
+
+    const userIds = (follows || []).map(d => type === 'followers' ? d.follower_id : d.following_id)
+
     if (userIds.length > 0) {
       const limitedIds = userIds.slice(0, 20)
-      const profiles = await Promise.all(limitedIds.map(async id => {
-        const uSnap = await getDoc(doc(db, 'users', id))
-        return uSnap.exists() ? { uid: id, ...uSnap.data() } : null
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', limitedIds)
+
+      socialList.value = (profiles || []).map(p => ({
+        uid: p.id,
+        displayName: p.display_name || 'Expert',
+        photoURL: p.avatar_url || '',
+        id: p.id,
       }))
-      socialList.value = profiles.filter(p => p !== null)
     }
   } catch (err) {
     console.error("Social list error", err)
@@ -137,31 +144,38 @@ const handleFileUpload = async (event) => {
       }
     })
 
-    const sRef = storageRef(storage, `profiles/${authStore.user.uid}`)
-    await uploadBytes(sRef, compressedBlob)
-    const url = await getDownloadURL(sRef)
-    
-    // Update Firestore
-    await updateDoc(doc(db, 'users', authStore.user.uid), { photoURL: url })
-    
+    // Upload vers Supabase Storage
+    const fileExt = 'jpg'
+    const filePath = `profiles/${authStore.user.id}/${Date.now()}.${fileExt}`
+    const { error: uploadError } = await supabase.storage
+      .from('profiles')
+      .upload(filePath, compressedBlob, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      })
+
+    if (uploadError) throw uploadError
+
+    // Récupérer l'URL publique
+    const { data: { publicUrl } } = supabase.storage
+      .from('profiles')
+      .getPublicUrl(filePath)
+
+    // Mettre à jour le profil dans Supabase
+    await supabase
+      .from('profiles')
+      .update({ avatar_url: publicUrl })
+      .eq('id', authStore.user.id)
+
     // Update local state
     if (authStore.profile) {
-      authStore.profile.photoURL = url
+      authStore.profile.avatar_url = publicUrl
     }
-    
+
     message.value = { text: 'Photo de profil mise à jour.', type: 'success' }
   } catch (err) {
     console.error("Upload error:", err)
-    if (err.code === 'storage/unauthorized') {
-      message.value = { 
-        text: 'Permission refusée. Vérifiez les règles Firebase Storage (autoriser lecture/écriture pour les utilisateurs authentifiés).', 
-        type: 'error' 
-      }
-    } else if (err.code === 'storage/object-not-found') {
-      message.value = { text: 'Fichier introuvable.', type: 'error' }
-    } else {
-      message.value = { text: `Erreur photo: ${err.message || 'Inconnue'}`, type: 'error' }
-    }
+    message.value = { text: `Erreur photo: ${err.message || 'Vérifiez que le bucket "profiles" existe dans Supabase Storage.'}`, type: 'error' }
   } finally {
     uploading.value = false
     setTimeout(() => message.value.text = '', 6000)

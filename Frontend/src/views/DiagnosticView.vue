@@ -1,8 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../api'
-import { auth, db } from '../firebase'
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
+import { supabase } from '../supabase'
 import gsap from 'gsap'
 
 const imageFile = ref(null)
@@ -169,21 +168,26 @@ const resizeImageForFirestore = (dataUrl, maxWidth = 600) => {
 }
 
 const saveToHistory = async (diag, image) => {
-  if (!auth.currentUser || !diag) return
-  
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.user || !diag) return
+
   // Compresser l'image pour éviter de dépasser 1Mo
   const compressedImage = await resizeImageForFirestore(image)
 
-  await addDoc(collection(db, 'users', auth.currentUser.uid, 'history'), {
-    image: compressedImage,
-    plante: diag.plante || 'Plante inconnue',
-    utilite: diag.utilite || 'Information non disponible',
-    proprietes_medicinales: diag.proprietes_medicinales || 'Information non disponible',
-    maladie: diag.maladie || 'Saine',
-    cause: diag.cause || 'N/A',
-    traitement: diag.traitement || 'N/A',
-    produit_recommande: diag.produit_recommande || 'N/A',
-    date: serverTimestamp()
+  await supabase.from('scan_history').insert({
+    user_id: session.user.id,
+    image_url: compressedImage,
+    plant_name: diag.plante || 'Plante inconnue',
+    disease: diag.maladie || 'Saine',
+    diagnosis: {
+      plante: diag.plante || 'Plante inconnue',
+      utilite: diag.utilite || 'Information non disponible',
+      proprietes_medicinales: diag.proprietes_medicinales || 'Information non disponible',
+      maladie: diag.maladie || 'Saine',
+      cause: diag.cause || 'N/A',
+      traitement: diag.traitement || 'N/A',
+      produit_recommande: diag.produit_recommande || 'N/A',
+    },
   })
 }
 

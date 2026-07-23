@@ -1,22 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { db } from '../firebase'
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot, 
-  addDoc, 
-  serverTimestamp, 
-  doc, 
-  getDoc,
-  getDocs,
-  limit,
-  setDoc,
-  updateDoc
-} from 'firebase/firestore'
+import { supabase } from '../supabase'
 import { useAuthStore } from '../authStore'
 import gsap from 'gsap'
 
@@ -37,152 +22,203 @@ const showMobileList = ref(true)
 const chatError = ref(null)
 const isProcessingPrefill = ref(false)
 
-let chatsUnsubscribe = null
-let msgsUnsubscribe = null
+let chatsChannel = null
+let msgChannel = null
+
+const buildChatListFromData = async (chatData) => {
+  const chatList = []
+  for (const chat of chatData) {
+    const partnerId = chat.participants.find(p => p !== authStore.user.id)
+    let partnerInfo = chat.partnerInfo
+    if (!partnerInfo) {
+      const { data: pData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', partnerId)
+        .single()
+      partnerInfo = pData || { displayName: 'Utilisateur Inconnu' }
+    }
+    chatList.push({
+      id: chat.id,
+      ...chat,
+      partnerId,
+      partnerName: partnerInfo.displayName,
+      partnerPic: partnerInfo.photoURL,
+      isOnline: partnerInfo.isOnline || false,
+      lastUpdate: chat.last_message_at,
+      lastMessage: chat.last_message
+    })
+  }
+  return chatList
+}
 
 // Load all chats for the current user
-const loadChats = () => {
+const loadChats = async () => {
   if (!authStore.user) return
-  
-  const chatsQuery = query(
-    collection(db, 'chats'),
-    where('participants', 'array-contains', authStore.user.uid),
-    orderBy('lastUpdate', 'desc')
-  )
 
-  chatsUnsubscribe = onSnapshot(chatsQuery, async (snap) => {
-    try {
-      const chatList = []
-      for (const d of snap.docs) {
-        const chatData = d.data()
-        const partnerId = chatData.participants.find(p => p !== authStore.user.uid)
-        
-        // Fetch partner profile if not already in memory
-        let partnerInfo = chatData.partnerInfo
-        if (!partnerInfo) {
-           const pSnap = await getDoc(doc(db, 'users', partnerId))
-           partnerInfo = pSnap.exists() ? pSnap.data() : { displayName: 'Utilisateur Inconnu' }
-        }
-        
-        chatList.push({
-          id: d.id,
-          ...chatData,
-          partnerId,
-          partnerName: partnerInfo.displayName,
-          partnerPic: partnerInfo.photoURL,
-          isOnline: partnerInfo.isOnline || false
-        })
-      }
-      chats.value = chatList
-      chatsLoading.value = false
-      chatError.value = null
-      
-      // Auto-select chat if query param exists
-      const targetUser = route.query.to || route.query.newChat;
-      if (targetUser && !activeChatId.value && !isProcessingPrefill.value) {
-        startChatWith(targetUser)
-        
-        if (route.query.prefill) {
-           isProcessingPrefill.value = true
-           newMessage.value = route.query.prefill
-           
-           // Small delay to ensure selectChat finished
-           setTimeout(async () => {
-             if (activeChatId.value && newMessage.value) {
-               await sendMessage()
-               // Cleanup URL
-               router.replace('/messages')
-             }
-             isProcessingPrefill.value = false
-           }, 800)
-        }
-      }
-    } catch (err) {
-      console.error("Chats update error:", err)
-      chatsLoading.value = false
-    }
-  }, (err) => {
-    console.error("Snapshot error:", err)
+  try {
+    const { data: chatData, error } = await supabase
+      .from('chats')
+      .select('*')
+      .contains('participants', [authStore.user.id])
+      .order('last_message_at', { ascending: false })
+
+    if (error) throw error
+
+    chats.value = await buildChatListFromData(chatData || [])
     chatsLoading.value = false
-    if (err.code === 'failed-precondition') {
-      chatError.value = "Index Firestore manquant. Pour activer la messagerie, créez un index composite sur la collection 'chats' avec les champs : participants (array-contains) et lastUpdate (descending)."
-    } else {
-      chatError.value = "Erreur de connexion aux messages. Vérifiez votre connexion Firestore."
+    chatError.value = null
+
+    // Auto-select chat if query param exists
+    const targetUser = route.query.to || route.query.newChat;
+    if (targetUser && !activeChatId.value && !isProcessingPrefill.value) {
+      startChatWith(targetUser)
+
+      if (route.query.prefill) {
+         isProcessingPrefill.value = true
+         newMessage.value = route.query.prefill
+
+         setTimeout(async () => {
+           if (activeChatId.value && newMessage.value) {
+             await sendMessage()
+             router.replace('/messages')
+           }
+           isProcessingPrefill.value = false
+         }, 800)
+      }
     }
-  })
+  } catch (err) {
+    console.error("Chats update error:", err)
+    chatsLoading.value = false
+    chatError.value = "Erreur de chargement des conversations."
+  }
+
+  // Subscribe to realtime changes
+  chatsChannel = supabase.channel('chats')
+  chatsChannel.on('postgres_changes',
+    { event: '*', schema: 'public', table: 'chats' },
+    async () => {
+      const { data: updatedChats } = await supabase
+        .from('chats')
+        .select('*')
+        .contains('participants', [authStore.user.id])
+        .order('last_message_at', { ascending: false })
+
+      if (updatedChats) {
+        chats.value = await buildChatListFromData(updatedChats)
+      }
+    }
+  ).subscribe()
 }
 
 const startChatWith = async (partnerId) => {
-  const participants = [authStore.user.uid, partnerId].sort()
+  const participants = [authStore.user.id, partnerId].sort()
   const chatId = participants.join('_')
-  
-  // Check if chat exists or create a placeholder
-  const chatDoc = await getDoc(doc(db, 'chats', chatId))
-  if (!chatDoc.exists()) {
-    const partnerSnap = await getDoc(doc(db, 'users', partnerId))
-    const pData = partnerSnap.data() || {}
-    
-    // Temporary placeholder in local state
+
+  // Check if chat exists
+  const { data: existingChat } = await supabase
+    .from('chats')
+    .select('*')
+    .eq('id', chatId)
+    .single()
+
+  if (!existingChat) {
+    const { data: pData } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', partnerId)
+      .single()
+    const profile = pData || {}
+
     if (!chats.value.find(c => c.id === chatId)) {
       chats.value.unshift({
         id: chatId,
         partnerId,
-        partnerName: pData.displayName || 'Nouvel Ami',
-        partnerPic: pData.photoURL,
+        partnerName: profile.displayName || 'Nouvel Ami',
+        partnerPic: profile.photoURL,
         lastMessage: 'Démarrer la conversation...',
-        lastUpdate: new Date()
+        lastUpdate: new Date().toISOString()
       })
     }
   }
-  
+
   selectChat(chatId, partnerId)
 }
 
 const selectChat = async (chatId, partnerId) => {
-  if (msgsUnsubscribe) msgsUnsubscribe()
-  
+  if (msgChannel) msgChannel.unsubscribe()
+
   activeChatId.value = chatId
   showMobileList.value = false
-  
+
   // Fetch full partner info
-  const pSnap = await getDoc(doc(db, 'users', partnerId))
-  chatPartner.value = pSnap.exists() ? pSnap.data() : { displayName: 'Utilisateur' }
+  const { data: pData } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', partnerId)
+    .single()
+  chatPartner.value = pData || { displayName: 'Utilisateur' }
 
-  const msgQuery = query(
-    collection(db, 'chats', chatId, 'messages'),
-    orderBy('createdAt', 'asc'),
-    limit(100)
-  )
+  // Fetch initial messages
+  const { data: msgData } = await supabase
+    .from('chat_messages')
+    .select('*')
+    .eq('chat_id', chatId)
+    .order('created_at', { ascending: true })
+    .limit(100)
 
-  msgsUnsubscribe = onSnapshot(msgQuery, (snap) => {
-    messages.value = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    scrollToBottom()
-  })
+  messages.value = (msgData || []).map(m => ({
+    id: m.id,
+    senderId: m.sender_id,
+    text: m.content,
+    createdAt: m.created_at,
+    ...m
+  }))
+  scrollToBottom()
+
+  // Subscribe to new messages
+  msgChannel = supabase.channel(`messages:${chatId}`)
+  msgChannel.on('postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `chat_id=eq.${chatId}` },
+    (payload) => {
+      const newMsg = {
+        id: payload.new.id,
+        senderId: payload.new.sender_id,
+        text: payload.new.content,
+        createdAt: payload.new.created_at,
+        ...payload.new
+      }
+      messages.value.push(newMsg)
+      scrollToBottom()
+    }
+  ).subscribe()
 }
 
 const sendMessage = async () => {
   if (!newMessage.value.trim() || !activeChatId.value) return
-  
+
   const msg = newMessage.value
   const chatId = activeChatId.value
   newMessage.value = ''
 
   try {
-    const participants = [authStore.user.uid, chatPartner.value.uid].sort()
-    
-    // Ensure chat doc exists
-    await setDoc(doc(db, 'chats', chatId), {
-      participants,
-      lastMessage: msg,
-      lastUpdate: serverTimestamp(),
-      lastSenderId: authStore.user.uid
-    }, { merge: true })
+    const participants = [authStore.user.id, chatPartner.value.id].sort()
 
-    // Add message
-    await addDoc(collection(db, 'chats', chatId, 'messages'), {
-      senderId: authStore.user.uid,
-      text: msg,
-      createdAt: serverTimestamp()
+    // Upsert chat doc
+    await supabase.from('chats').upsert({
+      id: chatId,
+      participants,
+      last_message: msg,
+      last_message_at: new Date().toISOString(),
+      last_message_sender_id: authStore.user.id
+    })
+
+    // Insert message
+    await supabase.from('chat_messages').insert({
+      chat_id: chatId,
+      sender_id: authStore.user.id,
+      content: msg,
+      message_type: 'text'
     })
   } catch (err) {
     console.error("Chat Error:", err)
@@ -217,8 +253,8 @@ watch(() => route.query.to, (newTo) => {
 })
 
 onUnmounted(() => {
-  if (chatsUnsubscribe) chatsUnsubscribe()
-  if (msgsUnsubscribe) msgsUnsubscribe()
+  if (chatsChannel) chatsChannel.unsubscribe()
+  if (msgChannel) msgChannel.unsubscribe()
 })
 
 // Navigation help for mobile
@@ -260,7 +296,7 @@ const backToList = () => {
               <div class="item-info">
                 <div class="item-head">
                   <span class="partner-name">{{ chat.partnerName }}</span>
-                  <span class="chat-time">{{ chat.lastUpdate?.toDate ? chat.lastUpdate.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '' }}</span>
+                  <span class="chat-time">{{ chat.lastUpdate ? new Date(chat.lastUpdate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '' }}</span>
                 </div>
                 <p class="last-msg">{{ chat.lastMessage }}</p>
               </div>
@@ -275,7 +311,7 @@ const backToList = () => {
               <button class="btn-back" @click="backToList">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
               </button>
-              <div class="header-user" @click="router.push('/profile/' + chatPartner.uid)">
+              <div class="header-user" @click="router.push('/profile/' + chatPartner.id)">
                 <img :src="chatPartner.photoURL || 'https://via.placeholder.com/40'" class="h-avatar" />
                 <div class="h-info">
                   <h3>{{ chatPartner.displayName }}</h3>
@@ -286,9 +322,9 @@ const backToList = () => {
 
             <div class="messages-viewport" ref="scrollContainer">
                <div v-for="m in messages" :key="m.id" 
-                    :class="['msg-line', m.senderId === authStore.user?.uid ? 'mine' : 'theirs']">
-                  <img v-if="m.senderId !== authStore.user?.uid" :src="chatPartner.photoURL || 'https://via.placeholder.com/30'" class="msg-mini-avatar" />
-                  <div class="msg-bubble" :title="m.createdAt?.toDate?.()?.toLocaleString()">
+                    :class="['msg-line', m.senderId === authStore.user?.id ? 'mine' : 'theirs']">
+                  <img v-if="m.senderId !== authStore.user?.id" :src="chatPartner.photoURL || 'https://via.placeholder.com/30'" class="msg-mini-avatar" />
+                  <div class="msg-bubble" :title="m.createdAt ? new Date(m.createdAt).toLocaleString() : ''">
                     {{ m.text }}
                   </div>
                </div>

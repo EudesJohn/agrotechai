@@ -1,12 +1,5 @@
-import { defineStore } from 'pinia';
-import {
-    signInWithEmailAndPassword,
-    createUserWithEmailAndPassword,
-    signOut,
-    onAuthStateChanged
-} from 'firebase/auth';
-import { auth, db } from './firebase';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { defineStore } from 'pinia'
+import { supabase } from './supabase'
 
 export const useAuthStore = defineStore('auth', {
     state: () => ({
@@ -23,110 +16,175 @@ export const useAuthStore = defineStore('auth', {
     },
 
     actions: {
-        initAuth() {
-            onAuthStateChanged(auth, async (currentUser) => {
-                this.user = currentUser;
-                if (currentUser) {
-                    await this.fetchProfile(currentUser.uid);
-                    await this.updateOnlineStatus(true);
-                } else {
-                    this.profile = null;
-                }
-                this.loading = false;
-            });
-        },
-
-        async updateOnlineStatus(status) {
-            if (!this.user) return;
-            try {
-                const docRef = doc(db, 'users', this.user.uid);
-                await updateDoc(docRef, { isOnline: status, lastSeen: new Date().toISOString() });
-            } catch (err) {
-                console.error("Online Status Error:", err);
+        /**
+         * Normalise l'objet user Supabase pour conserver
+         * la compatibilité avec le reste de l'application
+         * (notamment user.uid utilisé dans les templates/vues).
+         */
+        normalizeUser(sessionUser) {
+            if (!sessionUser) return null
+            return {
+                id: sessionUser.id,
+                uid: sessionUser.id, // backward compatibility
+                email: sessionUser.email,
+                displayName: sessionUser.user_metadata?.full_name || '',
+                photoURL: sessionUser.user_metadata?.avatar_url || '',
+                user_metadata: sessionUser.user_metadata || {},
             }
         },
 
-        async fetchProfile(uid) {
-            this.fetchError = null;
-            try {
-                const docRef = doc(db, 'users', uid);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    this.profile = docSnap.data();
+        initAuth() {
+            // 1) Vérifier s'il y a déjà une session au chargement
+            supabase.auth.getSession().then(({ data: { session } }) => {
+                this.user = this.normalizeUser(session?.user || null)
+                if (session?.user) {
+                    this.fetchProfile(session.user.id)
+                    this.updateOnlineStatus(true)
                 } else {
-                    const newProfile = {
-                        uid: uid,
-                        email: this.user.email,
-                        displayName: this.user.displayName || '',
-                        photoURL: this.user.photoURL || '',
-                        createdAt: new Date().toISOString(),
-                        user_type: 'FARMER',
-                        followersCount: 0,
-                        followingCount: 0
-                    };
-                    await setDoc(docRef, newProfile);
-                    this.profile = newProfile;
+                    this.profile = null
+                }
+                this.loading = false
+            })
+
+            // 2) Écouter les changements d'auth (connexion, déconnexion, refresh)
+            supabase.auth.onAuthStateChange((event, session) => {
+                this.user = this.normalizeUser(session?.user || null)
+                if (event === 'SIGNED_IN' && session?.user) {
+                    this.fetchProfile(session.user.id)
+                    this.updateOnlineStatus(true)
+                } else if (event === 'SIGNED_OUT') {
+                    this.profile = null
+                }
+                this.loading = false
+            })
+        },
+
+        async updateOnlineStatus(status) {
+            if (!this.user) return
+            try {
+                await supabase
+                    .from('profiles')
+                    .update({ is_online: status, last_seen: new Date().toISOString() })
+                    .eq('id', this.user.id)
+            } catch (err) {
+                console.error('Online Status Error:', err)
+            }
+        },
+
+        async fetchProfile(userId) {
+            this.fetchError = null
+            try {
+                const { data: profile, error } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', userId)
+                    .single()
+
+                if (error) {
+                    // Si le profil n'existe pas (cas rare en prod, mais possible),
+                    // le créer
+                    if (error.code === 'PGRST116') {
+                        const newProfile = {
+                            id: userId,
+                            email: this.user?.email || '',
+                            display_name: this.user?.displayName || '',
+                            avatar_url: this.user?.photoURL || '',
+                            created_at: new Date().toISOString(),
+                        }
+                        const { data: insertedProfile, error: insertError } = await supabase
+                            .from('profiles')
+                            .insert(newProfile)
+                            .select()
+                            .single()
+
+                        if (insertError) throw insertError
+                        this.profile = insertedProfile
+                    } else {
+                        throw error
+                    }
+                } else {
+                    this.profile = profile
                 }
             } catch (err) {
-                console.error("Erreur fetchProfile:", err);
-                const technicalError = err.code || err.message || 'Erreur inconnue';
-                this.fetchError = `Accès au profil restreint (${technicalError}). Veuillez vérifier que les règles de sécurité Firestore sont publiées sur votre console Firebase.`;
+                console.error('Erreur fetchProfile:', err)
+                this.fetchError = `Accès au profil restreint (${err.message || 'Erreur inconnue'}). Veuillez vérifier les policies RLS.`
             }
         },
 
         async updateProfile(data) {
-            if (!this.user) return;
+            if (!this.user) return
             try {
-                const docRef = doc(db, 'users', this.user.uid);
-                await updateDoc(docRef, data);
-                this.profile = { ...this.profile, ...data };
+                const { error } = await supabase
+                    .from('profiles')
+                    .update(data)
+                    .eq('id', this.user.id)
+
+                if (error) throw error
+                this.profile = { ...this.profile, ...data }
             } catch (err) {
-                console.error("Erreur updateProfile:", err);
-                throw err;
+                console.error('Erreur updateProfile:', err)
+                throw err
             }
         },
 
         async login(email, password) {
-            this.error = null;
+            this.error = null
             try {
-                await signInWithEmailAndPassword(auth, email, password);
+                const { error } = await supabase.auth.signInWithPassword({ email, password })
+                if (error) throw error
             } catch (err) {
-                this.error = err.message;
-                throw err;
+                this.error = err.message
+                throw err
             }
         },
 
         async register(email, password, extraData = {}) {
-            this.error = null;
+            this.error = null
             try {
-                const result = await createUserWithEmailAndPassword(auth, email, password);
-                const newProfile = {
-                    uid: result.user.uid,
-                    email: email,
-                    displayName: extraData.fullName || '',
-                    phone_number: extraData.phone || '',
-                    location: extraData.commune || '',
-                    user_type: extraData.sector || 'FARMER',
-                    createdAt: new Date().toISOString(),
-                    followersCount: 0,
-                    followingCount: 0
-                };
-                await setDoc(doc(db, 'users', result.user.uid), newProfile);
-                this.profile = newProfile;
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: {
+                            full_name: extraData.fullName || '',
+                            phone: extraData.phone || '',
+                        },
+                    },
+                })
+
+                if (error) throw error
+
+                // Si l'utilisateur est créé et connecté immédiatement
+                // (email confirmations désactivé), mettre à jour le profil
+                if (data?.user) {
+                    const profileUpdate = {
+                        display_name: extraData.fullName || '',
+                        phone_number: extraData.phone || '',
+                        location: extraData.commune || '',
+                        user_type: extraData.sector || 'FARMER',
+                    }
+                    await supabase
+                        .from('profiles')
+                        .update(profileUpdate)
+                        .eq('id', data.user.id)
+
+                    this.profile = { ...this.profile, ...profileUpdate, id: data.user.id }
+                }
             } catch (err) {
-                this.error = err.message;
-                throw err;
+                this.error = err.message
+                throw err
             }
         },
 
         async logout() {
             try {
-                if (this.user) await this.updateOnlineStatus(false);
-                await signOut(auth);
-                this.profile = null;
+                if (this.user) await this.updateOnlineStatus(false)
+                await supabase.auth.signOut()
+                this.user = null
+                this.profile = null
             } catch (err) {
-                console.error("Erreur lors de la déconnexion", err);
+                console.error('Erreur lors de la déconnexion', err)
             }
-        }
-    }
-});
+        },
+    },
+})

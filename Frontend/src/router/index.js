@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { auth } from '../firebase'
+import { supabase } from '../supabase'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -50,30 +50,28 @@ const router = createRouter({
       component: () => import('../views/AdminView.vue'),
       meta: { requiresAuth: true }
     },
-
   ]
 })
 
 router.beforeEach(async (to, from, next) => {
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
 
-  if (requiresAuth && !auth.currentUser) {
-    // Attendre que Firebase ait fini de restaurer la session
-    const user = await new Promise(resolve => {
-      const unsubscribe = auth.onAuthStateChanged(user => {
-        unsubscribe()
-        resolve(user)
-      })
-      // Timeout de sécurité après 10s (pas 500ms) pour éviter la race condition
-      setTimeout(() => {
-        unsubscribe()
-        resolve(auth.currentUser)
-      }, 10000)
-    })
+  if (requiresAuth) {
+    // Vérifier la session Supabase (sans attendre un listener)
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      // Timeout de sécurité après 10s (au cas où getSession échoue)
+      const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 10000))
 
-    if (!user) {
-      next('/')
-      return
+      const { data } = await Promise.race([
+        supabase.auth.getSession(),
+        timeoutPromise.then(() => ({ data: { session: null } }))
+      ])
+
+      if (!data?.session) {
+        next('/')
+        return
+      }
     }
   }
 

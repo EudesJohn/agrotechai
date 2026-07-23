@@ -1,5 +1,5 @@
-import axios from 'axios';
-import { auth } from './firebase';
+import axios from 'axios'
+import { supabase } from './supabase'
 
 // Base configuration: VITE_API_URL from .env takes priority in production.
 const api = axios.create({
@@ -7,19 +7,17 @@ const api = axios.create({
     headers: {
         'Content-type': 'application/json',
     },
-});
+})
 
-// Intercepteur pour injecter le token d'authentification Firebase
+// Intercepteur pour injecter le token d'authentification Supabase
 api.interceptors.request.use(async (config) => {
-    const user = auth.currentUser;
-    if (user) {
-        // Récupère le token JWT (force le rafraîchissement si nécessaire)
-        const token = await user.getIdToken();
-        config.headers.Authorization = `Bearer ${token}`;
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.access_token) {
+        config.headers.Authorization = `Bearer ${session.access_token}`
     }
-    return config;
+    return config
 }, (error) => {
-    return Promise.reject(error);
-});
+    return Promise.reject(error)
+})
 
-export default api;
+export default api

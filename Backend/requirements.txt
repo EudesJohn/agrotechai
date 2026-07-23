@@ -8,4 +8,4 @@ whitenoise
 requests
 psycopg2-binary
 dj-database-url
-cryptography
+PyJWT>=2.8.0

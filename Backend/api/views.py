@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
-from .firebase_auth import FirebaseAuthentication
+from .supabase_auth import SupabaseAuthentication
 from django.conf import settings
 import google.generativeai as genai
 import json
@@ -21,7 +21,7 @@ if settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
 
 @api_view(['POST'])
-@authentication_classes([FirebaseAuthentication])
+@authentication_classes([SupabaseAuthentication])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AIThrottle])
 def diagnose_plant(request):
@@ -63,7 +63,7 @@ def diagnose_plant(request):
         return Response({"error": f"Erreur IA: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
-@authentication_classes([FirebaseAuthentication])
+@authentication_classes([SupabaseAuthentication])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AIThrottle])
 def ai_search(request):
@@ -82,12 +82,12 @@ def ai_search(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_user(request):
-    # La création est maintenant gérée par FirebaseAuthentication automatiquement
+    # La création est maintenant gérée par SupabaseAuthentication automatiquement
     # Cet endpoint reste pour la compatibilité frontend si besoin de stats supplémentaires
     return Response({"status": "success", "message": "Enregistrement via Sync Auto activé."})
 
 @api_view(['GET', 'PUT', 'PATCH'])
-@authentication_classes([FirebaseAuthentication])
+@authentication_classes([SupabaseAuthentication])
 @permission_classes([IsAuthenticated])
 def profile_detail(request):
     try:
@@ -117,7 +117,7 @@ def public_profile(request, firebase_uid):
         return Response({"error": "Profil non trouvé"}, status=404)
 
 @api_view(['GET'])
-@authentication_classes([FirebaseAuthentication])
+@authentication_classes([SupabaseAuthentication])
 @permission_classes([IsAuthenticated])
 def admin_stats(request):
     """Statistiques pour le dashboard admin."""

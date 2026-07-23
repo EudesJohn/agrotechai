@@ -73,7 +73,7 @@
                          </button>
 
                           <button 
-                            v-if="authStore.user && user.uid !== authStore.user.uid"
+                            v-if="authStore.user && user.uid !== authStore.user.id"
                             class="btn btn-ghost sm-round ml-8"
                             @click.stop="openQuickMsg(user)"
                             title="Envoyer un message"
@@ -125,8 +125,8 @@
               </div>
 
                <!-- Quick Message Trigger -->
-               <button 
-                 v-if="authStore.user && post.authorId !== authStore.user.uid"
+               <button
+                 v-if="authStore.user && post.authorId !== authStore.user.id"
                  class="btn-quick-msg"
                  @click.stop="openQuickMsg({ uid: post.authorId, displayName: post.authorName, photoURL: post.authorPic })"
                  title="Envoyer un message"
@@ -134,7 +134,7 @@
                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                </button>
 
-              <div v-if="authStore.user && post.authorId === authStore.user.uid" class="post-menu">
+              <div v-if="authStore.user && post.authorId === authStore.user.id" class="post-menu">
                  <button class="btn-menu" @click="post.showMenu = !post.showMenu">⋮</button>
                  <div v-if="post.showMenu" class="menu-dropdown glass-panel">
                    <button @click="startEdit(post)">Modifier</button>
@@ -260,23 +260,8 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../authStore'
-import { db } from '../firebase'
+import { supabase } from '../supabase'
 import QuickMessageModal from '../components/QuickMessageModal.vue'
-import { 
-  collection, 
-  addDoc, 
-  getDocs, 
-  query, 
-  orderBy, 
-  limit, 
-  where, 
-  serverTimestamp,
-  doc,
-  updateDoc,
-  increment,
-  setDoc,
-  getDoc
-} from 'firebase/firestore'
 import gsap from 'gsap'
 
 const router = useRouter()
@@ -324,41 +309,71 @@ const newPost = reactive({
 
 const fetchPosts = async () => {
   try {
-    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(20))
-    const querySnapshot = await getDocs(q)
-    posts.value = await Promise.all(querySnapshot.docs.map(async docSnapshot => {
-      const data = docSnapshot.data()
-      const postId = docSnapshot.id
-      
+    const { data: postsData, error } = await supabase
+      .from('posts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (error) throw error
+
+    posts.value = await Promise.all((postsData || []).map(async (post) => {
+      // Fetch author profile
+      let authorName = 'Expert'
+      let authorPic = ''
+      if (post.user_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('display_name, avatar_url')
+          .eq('id', post.user_id)
+          .single()
+        if (profile) {
+          authorName = profile.display_name || 'Expert'
+          authorPic = profile.avatar_url || ''
+        }
+      }
+
       // Check user reaction
       let userReaction = null
       if (authStore.user) {
-        const rSnap = await getDoc(doc(db, 'posts', postId, 'reactions', authStore.user.uid))
-        if (rSnap.exists()) userReaction = rSnap.data().type
+        const { data: reaction } = await supabase
+          .from('post_reactions')
+          .select('reaction_type')
+          .eq('post_id', post.id)
+          .eq('user_id', authStore.user.id)
+          .maybeSingle()
+        if (reaction) userReaction = reaction.reaction_type
       }
 
-      return { 
-        id: postId, 
-        ...data, 
-        showPop: false, 
-        showComments: false, 
-        comments: [], 
+      return {
+        id: post.id,
+        authorId: post.user_id,
+        authorName,
+        authorPic,
+        content: post.content,
+        image_url: post.image_url,
+        reactionsCount: post.reactions_count || {},
+        commentsCount: post.comments_count || 0,
+        createdAt: post.created_at,
+        tags: post.tags || [],
+        type: post.type || 'post',
+        isPinned: post.is_pinned || false,
+        showPop: false,
+        showComments: false,
+        comments: [],
         newComment: '',
         replyTo: null,
         userReaction,
-        reactionsCount: data.reactionsCount || {},
         showMenu: false,
         isEditing: false,
-        editContent: data.content,
-        views: data.views || 0
+        editContent: post.content
       }
     }))
-    
+
     setTimeout(() => {
       gsap.from(".animate-post", { y: 20, opacity: 0, duration: 0.8, stagger: 0.1, ease: "power2.out" })
     }, 100)
   } catch (err) {
-    console.error("Erreur Firestore Posts", err)
+    console.error("Erreur Supabase Posts", err)
   } finally {
     loading.value = false
   }
@@ -368,22 +383,23 @@ const publishPost = async () => {
   if (!authStore.user) return
   publishing.value = true
   try {
-    const postData = {
-      authorId: authStore.user.uid,
-      authorName: authStore.profile?.displayName || authStore.user.displayName || 'Expert',
-      authorPic: authStore.profile?.photoURL || authStore.user.photoURL || '',
-      content: newPost.content,
-      image_url: newPost.image_url,
-      createdAt: serverTimestamp(),
-      likesCount: 0,
-      commentsCount: 0
-    }
-    await addDoc(collection(db, 'posts'), postData)
+    const { error } = await supabase
+      .from('posts')
+      .insert({
+        user_id: authStore.user.id,
+        content: newPost.content,
+        image_url: newPost.image_url || null,
+        type: 'post',
+        tags: []
+      })
+      .select()
+      .single()
+    if (error) throw error
     newPost.content = ''
     newPost.image_url = ''
     fetchPosts()
   } catch (err) {
-    alert("Erreur publication Firestore.")
+    alert("Erreur publication.")
   } finally {
     publishing.value = false
   }
@@ -395,28 +411,39 @@ const searchUsers = async () => {
     return
   }
   try {
-    // Normalization: capitalize first letter for better matching in Firestore
-    const term = searchQuery.value.charAt(0).toUpperCase() + searchQuery.value.slice(1)
-    
-    const q = query(
-      collection(db, 'users'), 
-      where('displayName', '>=', term),
-      where('displayName', '<=', term + '\uf8ff'),
-      limit(5)
-    )
-    const snap = await getDocs(q)
-    const results = snap.docs.map(d => ({ uid: d.id, ...d.data() }))
-    
+    const term = searchQuery.value.toLowerCase()
+
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .ilike('display_name', term + '%')
+      .limit(10)
+    if (error) throw error
+
+    const results = (profiles || []).map(p => ({
+      uid: p.id,
+      displayName: p.display_name,
+      photoURL: p.avatar_url,
+      location: p.location,
+      user_type: p.user_type,
+      isFollowing: false
+    }))
+
     // Check follow status for each result
     if (authStore.user) {
       for (const res of results) {
-        const fSnap = await getDoc(doc(db, 'follows', `${authStore.user.uid}_${res.uid}`))
-        res.isFollowing = fSnap.exists()
+        const { data: follow } = await supabase
+          .from('follows')
+          .select('*')
+          .eq('follower_id', authStore.user.id)
+          .eq('following_id', res.uid)
+          .maybeSingle()
+        res.isFollowing = !!follow
       }
     }
     searchResults.value = results
   } catch (err) {
-    console.error("Erreur recherche Firestore", err)
+    console.error("Erreur recherche", err)
   }
 }
 
@@ -426,27 +453,25 @@ const toggleReaction = async (postId, type) => {
   if (!post) return
 
   try {
-    const reactionRef = doc(db, 'posts', postId, 'reactions', authStore.user.uid)
-    const postRef = doc(db, 'posts', postId)
-    
     if (post.userReaction === type) {
       // Remove reaction
-      await deleteDoc(reactionRef)
-      await updateDoc(postRef, {
-        [`reactionsCount.${type}`]: increment(-1)
-      })
+      await supabase
+        .from('post_reactions')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', authStore.user.id)
       post.reactionsCount[type] -= 1
       post.userReaction = null
     } else {
       // Switch or add reaction
       const oldType = post.userReaction
-      await setDoc(reactionRef, { type, userId: authStore.user.uid })
-      
-      const updateData = { [`reactionsCount.${type}`]: increment(1) }
-      if (oldType) updateData[`reactionsCount.${oldType}`] = increment(-1)
-      
-      await updateDoc(postRef, updateData)
-      
+      await supabase
+        .from('post_reactions')
+        .upsert(
+          { post_id: postId, user_id: authStore.user.id, reaction_type: type },
+          { onConflict: 'post_id,user_id' }
+        )
+
       post.reactionsCount[type] = (post.reactionsCount[type] || 0) + 1
       if (oldType) post.reactionsCount[oldType] -= 1
       post.userReaction = type
@@ -460,16 +485,38 @@ const toggleComments = async (postId) => {
   const post = posts.value.find(p => p.id === postId)
   if (!post) return
   post.showComments = !post.showComments
-  if (post.showComments) {
-    if (post.comments.length === 0) {
-      const q = query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'asc'))
-      const snap = await getDocs(q)
-      post.comments = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    }
-    // Track view
+  if (post.showComments && post.comments.length === 0) {
     try {
-      await updateDoc(doc(db, 'posts', postId), { views: increment(1) })
-      post.views = (post.views || 0) + 1
+      const { data: comments, error } = await supabase
+        .from('post_comments')
+        .select('*')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true })
+      if (!error && comments && comments.length > 0) {
+        // Batch-fetch author profiles
+        const userIds = [...new Set(comments.map(c => c.user_id).filter(Boolean))]
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name, avatar_url')
+          .in('id', userIds)
+        const profileMap = {}
+        if (profiles) {
+          profiles.forEach(p => {
+            profileMap[p.id] = { name: p.display_name || 'Expert', pic: p.avatar_url || '' }
+          })
+        }
+        post.comments = comments.map(c => ({
+          id: c.id,
+          authorId: c.user_id,
+          authorName: profileMap[c.user_id]?.name || 'Expert',
+          authorPic: profileMap[c.user_id]?.pic || '',
+          content: c.content,
+          parentId: c.parent_id,
+          createdAt: c.created_at
+        }))
+      } else if (!error && comments) {
+        post.comments = []
+      }
     } catch (e) {}
   }
 }
@@ -480,18 +527,29 @@ const addComment = async (postId) => {
   if (!post || !post.newComment) return
 
   try {
-    const commentData = {
-      authorId: authStore.user.uid,
-      authorName: authStore.profile?.displayName || 'Expert',
-      authorPic: authStore.profile?.photoURL || '',
-      content: post.newComment,
-      parentId: post.replyTo || null,
-      createdAt: serverTimestamp()
+    const { data: newComment, error } = await supabase
+      .from('post_comments')
+      .insert({
+        post_id: postId,
+        user_id: authStore.user.id,
+        content: post.newComment,
+        parent_id: post.replyTo || null
+      })
+      .select()
+      .single()
+    if (error) throw error
+
+    if (newComment) {
+      post.comments.push({
+        id: newComment.id,
+        authorId: newComment.user_id,
+        authorName: authStore.profile?.displayName || 'Expert',
+        authorPic: authStore.profile?.photoURL || '',
+        content: newComment.content,
+        parentId: newComment.parent_id,
+        createdAt: newComment.created_at
+      })
     }
-    const docRef = await addDoc(collection(db, 'posts', postId, 'comments'), commentData)
-    await updateDoc(doc(db, 'posts', postId), { commentsCount: increment(1) })
-    
-    post.comments.push({ id: docRef.id, ...commentData, createdAt: new Date() })
     post.newComment = ''
     post.replyTo = null
     post.commentsCount = (post.commentsCount || 0) + 1
@@ -528,42 +586,34 @@ const toggleFollow = async (targetUid) => {
     alert("Veuillez vous connecter pour suivre cet expert.")
     return
   }
-  if (targetUid === authStore.user.uid) return
+  if (targetUid === authStore.user.id) return
   if (followLoading.value[targetUid]) return
-  
-  const followId = `${authStore.user.uid}_${targetUid}`
-  const followRef = doc(db, 'follows', followId)
+
   const user = searchResults.value.find(u => u.uid === targetUid)
   const isCurrentlyFollowing = user?.isFollowing
-  
+
   followLoading.value[targetUid] = true
-  
+
   try {
     if (isCurrentlyFollowing) {
-      await deleteDoc(followRef)
-      await updateDoc(doc(db, 'users', targetUid), { followersCount: increment(-1) })
-      await updateDoc(doc(db, 'users', authStore.user.uid), { followingCount: increment(-1) })
+      await supabase
+        .from('follows')
+        .delete()
+        .eq('follower_id', authStore.user.id)
+        .eq('following_id', targetUid)
       if (user) user.isFollowing = false
     } else {
-      await setDoc(followRef, {
-        followerId: authStore.user.uid,
-        followedId: targetUid,
-        createdAt: serverTimestamp()
-      })
+      await supabase
+        .from('follows')
+        .insert({
+          follower_id: authStore.user.id,
+          following_id: targetUid
+        })
       if (user) user.isFollowing = true
     }
   } catch (err) {
-    console.error("DEBUG FOLLOW ERROR DETAILS:", {
-      code: err.code,
-      message: err.message,
-      targetUid,
-      currentUser: authStore.user?.uid
-    })
-    if (err.code === 'failed-precondition') {
-      alert("Index Firestore manquant pour les abonnements.")
-    } else {
-      alert("Une erreur est survenue lors du changement d'abonnement. Vérifiez votre connexion.")
-    }
+    console.error("Follow error", err)
+    alert("Une erreur est survenue lors du changement d'abonnement.")
   } finally {
     followLoading.value[targetUid] = false
   }
@@ -581,7 +631,11 @@ const startEdit = (post) => {
 
 const saveEdit = async (post) => {
   try {
-    await updateDoc(doc(db, 'posts', post.id), { content: post.editContent })
+    await supabase
+      .from('posts')
+      .update({ content: post.editContent, is_edited: true })
+      .eq('id', post.id)
+      .eq('user_id', authStore.user.id)
     post.content = post.editContent
     post.isEditing = false
   } catch (err) {
@@ -592,7 +646,11 @@ const saveEdit = async (post) => {
 const deletePost = async (postId) => {
   if (!confirm("Supprimer cette publication ?")) return
   try {
-    await deleteDoc(doc(db, 'posts', postId))
+    await supabase
+      .from('posts')
+      .delete()
+      .eq('id', postId)
+      .eq('user_id', authStore.user.id)
     posts.value = posts.value.filter(p => p.id !== postId)
   } catch (err) {
     console.error("Delete error", err)
@@ -601,7 +659,7 @@ const deletePost = async (postId) => {
 
 const formatDate = (ts) => {
   if (!ts) return 'À l\'instant'
-  const d = ts.toDate ? ts.toDate() : new Date(ts)
+  const d = new Date(ts)
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 

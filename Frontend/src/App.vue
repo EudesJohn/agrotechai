@@ -1,15 +1,7 @@
 <script setup>
 import { ref, onMounted, reactive, provide, watch } from 'vue'
 import { RouterLink, RouterView, useRouter, useRoute } from 'vue-router'
-import { auth } from './firebase'
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  sendPasswordResetEmail
-} from 'firebase/auth'
+import { supabase } from './supabase'
 import { useAuthStore } from './authStore'
 import { communesBenin, sectors } from './constants'
 import gsap from 'gsap'
@@ -23,7 +15,6 @@ const route = useRoute()
 const showAuth = ref(false)
 const authMode = ref('login') // 'login', 'register', 'forgot'
 const loading = ref(false)
-const currentUser = ref(null)
 
 const authForm = reactive({
   email: '',
@@ -47,23 +38,18 @@ const syncWithBackend = async (user, profileData = {}) => {
 }
 
 const handleGoogleLogin = async () => {
-  const provider = new GoogleAuthProvider()
   try {
     loading.value = true
-    await signInWithPopup(auth, provider)
-    // Le onAuthStateChanged dans authStore se chargera du fetchProfile
-    showAuth.value = false
-    
-    // Attendre un peu que le profil soit chargé pour la redirection
-    setTimeout(() => {
-      if (!authStore.isProfileComplete) {
-        alert("Bienvenue ! Veuillez compléter votre profil.")
-        router.push('/profile')
-      }
-    }, 1000)
+    // Supabase OAuth redirige vers Google puis revient à l'app
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    })
+    // Le navigateur va quitter la page → le retour se fait via onAuthStateChange
   } catch (err) {
-    alert("Erreur Google: " + err.message)
-  } finally {
+    alert('Erreur Google: ' + err.message)
     loading.value = false
   }
 }
@@ -95,7 +81,9 @@ const handleReset = async () => {
   }
   loading.value = true
   try {
-    await sendPasswordResetEmail(auth, resetEmail.value)
+    await supabase.auth.resetPasswordForEmail(resetEmail.value, {
+      redirectTo: window.location.origin + '/profile',
+    })
     resetSent.value = true
     setTimeout(() => {
       resetSent.value = false
@@ -133,9 +121,11 @@ watch(() => route.path, () => {
 
 onMounted(() => {
   gsap.from(".navbar", { y: -20, opacity: 0, duration: 1, ease: "power3.out" })
-  
-  onAuthStateChanged(auth, (user) => {
-    currentUser.value = user
+
+  // L'initialisation de l'auth est gérée par authStore.initAuth()
+  // Appelé depuis App.vue au montage pour garantir que le state est prêt
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    // authStore.initAuth() a déjà été appelé dans main.js ou est en cours
   })
 })
 </script>
@@ -155,15 +145,15 @@ onMounted(() => {
         
         <nav class="nav-links desktop-only">
           <RouterLink to="/" class="nav-item">Accueil</RouterLink>
-          <RouterLink v-if="currentUser" to="/community" class="nav-item">Communauté</RouterLink>
-          <RouterLink v-if="currentUser" to="/diagnostic" class="nav-item">Diagnostic</RouterLink>
-          <RouterLink v-if="currentUser" to="/history" class="nav-item">Historique</RouterLink>
-          <RouterLink v-if="currentUser" to="/messages" class="nav-item">Messages</RouterLink>
-          <RouterLink v-if="currentUser" to="/profile" class="nav-item">Mon Profil</RouterLink>
+          <RouterLink v-if="authStore.user" to="/community" class="nav-item">Communauté</RouterLink>
+          <RouterLink v-if="authStore.user" to="/diagnostic" class="nav-item">Diagnostic</RouterLink>
+          <RouterLink v-if="authStore.user" to="/history" class="nav-item">Historique</RouterLink>
+          <RouterLink v-if="authStore.user" to="/messages" class="nav-item">Messages</RouterLink>
+          <RouterLink v-if="authStore.user" to="/profile" class="nav-item">Mon Profil</RouterLink>
         </nav>
         
         <div class="nav-actions">
-          <template v-if="!currentUser">
+          <template v-if="!authStore.user">
             <div class="desktop-only">
               <button class="btn-ghost" @click="openAuth('login')">Connexion</button>
               <button class="btn btn-primary btn-nav" @click="openAuth('register')">S'inscrire</button>
@@ -171,7 +161,7 @@ onMounted(() => {
           </template>
           <template v-else>
             <div class="user-profile-nav desktop-only" @click="router.push('/profile')" style="cursor: pointer">
-              <span class="user-email">{{ currentUser.email }}</span>
+              <span class="user-email">{{ authStore.user.email }}</span>
               <button class="btn-ghost" @click.stop="authStore.logout()">Déconnexion</button>
             </div>
           </template>
@@ -203,7 +193,7 @@ onMounted(() => {
         </div>
         <nav class="mobile-nav-links">
           <RouterLink to="/" class="m-nav-item" @click="closeMobileMenu">Accueil</RouterLink>
-          <template v-if="currentUser">
+          <template v-if="authStore.user">
             <RouterLink to="/community" class="m-nav-item" @click="closeMobileMenu">Communauté</RouterLink>
             <RouterLink to="/diagnostic" class="m-nav-item" @click="closeMobileMenu">Diagnostic</RouterLink>
             <RouterLink to="/history" class="m-nav-item" @click="closeMobileMenu">Historique</RouterLink>
@@ -211,7 +201,7 @@ onMounted(() => {
             <RouterLink to="/profile" class="m-nav-item" @click="closeMobileMenu">Mon Profil</RouterLink>
             <div class="m-divider"></div>
             <div class="m-profile-info">
-              <span class="m-user-email">{{ currentUser.email }}</span>
+              <span class="m-user-email">{{ authStore.user.email }}</span>
               <button class="btn btn-secondary m-btn" @click="authStore.logout(); closeMobileMenu()">Déconnexion</button>
             </div>
           </template>
