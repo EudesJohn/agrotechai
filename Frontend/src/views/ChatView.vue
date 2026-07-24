@@ -93,7 +93,8 @@ const loadChats = async () => {
     chatError.value = "Erreur de chargement des conversations."
   }
 
-  // Subscribe to realtime changes
+  // Subscribe to realtime changes (unsubscribe old first to avoid duplicates)
+  if (chatsChannel) chatsChannel.unsubscribe()
   chatsChannel = supabase.channel('chats')
   chatsChannel.on('postgres_changes',
     { event: '*', schema: 'public', table: 'chats' },
