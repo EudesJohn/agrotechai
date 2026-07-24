@@ -1,6 +1,0 @@
-[project]
-name = "agrotech-backend"
-version = "1.0.0"
-description = "Backend Agrotech - PlantGuard AI"
-requires-python = ">=3.12"
-dependencies = []
