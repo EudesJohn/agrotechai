@@ -53,7 +53,7 @@ const router = createRouter({
   ]
 })
 
-router.beforeEach(async (to, from, next) => {
+router.beforeEach(async (to, from) => {
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
 
   if (requiresAuth) {
@@ -69,13 +69,12 @@ router.beforeEach(async (to, from, next) => {
       ])
 
       if (!data?.session) {
-        next('/')
-        return
+        return '/'
       }
     }
   }
 
-  next()
+  return true
 })
 
 export default router

@@ -22,42 +22,54 @@ const handleSend = async () => {
 
   loading.value = true
   try {
-    const participants = [authStore.user.id, props.partnerId].sort()
+    const myId = authStore.user.id
+    const partnerId = props.partnerId
+    const participants = [myId, partnerId].sort()
+    // Format PostgreSQL array literal {uuid1,uuid2} (évite les 400 du client JS)
+    const pgArray = `{${participants.join(',')}}`
 
-    // Create or find existing chat by participants
-    const { data: existingChat } = await supabase
+    // 1. Chercher un chat existant via un filtre simple (un seul participant)
+    // puis filtrer côté client pour l'autre participant
+    const { data: myChats, error: searchError } = await supabase
       .from('chats')
-      .select('id')
-      .contains('participants', participants)
-      .maybeSingle()
+      .select('id, participants')
+      .contains('participants', [myId])
+
+    if (searchError) throw searchError
 
     let chatId
-    if (existingChat) {
-      chatId = existingChat.id
+    const existing = (myChats || []).find(c =>
+      Array.isArray(c.participants) && c.participants.includes(partnerId)
+    )
+
+    if (existing) {
+      chatId = existing.id
     } else {
+      // 2. Créer un nouveau chat avec le format PostgreSQL array
       const { data: newChat, error: createError } = await supabase
         .from('chats')
-        .insert({ participants })
+        .insert({ participants: pgArray })
         .select('id')
         .single()
       if (createError) throw createError
       chatId = newChat.id
     }
 
-    // Insert message (trigger updates chat last_message)
-    await supabase.from('chat_messages').insert({
+    // 3. Insérer le message avec vérification d'erreur
+    const { error: msgError } = await supabase.from('chat_messages').insert({
       chat_id: chatId,
-      sender_id: authStore.user.id,
+      sender_id: myId,
       content: message.value,
       message_type: 'text',
     })
+    if (msgError) throw msgError
 
     message.value = ''
     emit('sent')
     emit('close')
   } catch (err) {
     console.error("Error sending quick message:", err)
-    alert("Erreur lors de l'envoi du message.")
+    alert("Erreur lors de l'envoi du message. Veuillez réessayer.")
   } finally {
     loading.value = false
   }
@@ -125,7 +137,7 @@ textarea {
   width: 100%; min-height: 150px; background: rgba(255,255,255,0.03);
   border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
   color: #fff; padding: 16px; font-size: 1rem; line-height: 1.5;
-  outline: none; transition: 0.3s; resize: none;
+  outline: none; transition: border-color 200ms ease-out, box-shadow 200ms ease-out; resize: none;
 }
 textarea:focus { border-color: var(--primary); box-shadow: 0 0 15px var(--primary-glow); }
 
@@ -133,11 +145,15 @@ textarea:focus { border-color: var(--primary); box-shadow: 0 0 15px var(--primar
   padding: 16px 24px 24px; display: flex; justify-content: flex-end; gap: 12px;
 }
 .btn {
-  padding: 10px 24px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: 0.3s; border: none;
+  padding: 10px 24px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: transform 160ms ease-out, background 160ms ease-out; border: none;
 }
 .btn-primary { background: var(--primary); color: #000; }
-.btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 5px 15px var(--primary-glow); }
+.btn-primary:active:not(:disabled) { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 5px 15px var(--primary-glow); }
+}
 .btn-ghost { background: rgba(255,255,255,0.05); color: #fff; }
+.btn-ghost:active:not(:disabled) { transform: scale(0.97); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .animate-pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -154,7 +170,10 @@ textarea:focus { border-color: var(--primary); box-shadow: 0 0 15px var(--primar
 
 .btn-close { 
   background: none; border: none; color: #fff; font-size: 1.8rem; 
-  cursor: pointer; opacity: 0.6; transition: 0.3s;
+  cursor: pointer; opacity: 0.6; transition: opacity 200ms ease-out, color 200ms ease-out, transform 120ms ease-out;
 }
-.btn-close:hover { opacity: 1; color: var(--primary); }
+.btn-close:active { transform: scale(0.9); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-close:hover { opacity: 1; color: var(--primary); }
+}
 </style>

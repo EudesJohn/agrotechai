@@ -115,23 +115,28 @@ const loadChats = async () => {
 }
 
 const startChatWith = async (partnerId) => {
-  const participants = [authStore.user.id, partnerId].sort()
+  const myId = authStore.user.id
+  const participants = [myId, partnerId].sort()
+  const pgArray = `{${participants.join(',')}}`
 
-  // Check if chat exists by participants array
-  const { data: existingChat } = await supabase
+  // Find existing chats where I'm a participant, filter client-side for partner
+  const { data: myChats } = await supabase
     .from('chats')
-    .select('id')
-    .contains('participants', participants)
-    .maybeSingle()
+    .select('id, participants')
+    .contains('participants', [myId])
 
   let chatId
-  if (existingChat) {
-    chatId = existingChat.id
+  const existing = (myChats || []).find(c =>
+    Array.isArray(c.participants) && c.participants.includes(partnerId)
+  )
+
+  if (existing) {
+    chatId = existing.id
   } else {
-    // Create chat in Supabase (UUID auto-generated)
+    // Create chat with PostgreSQL array literal
     const { data: newChat, error: createError } = await supabase
       .from('chats')
-      .insert({ participants })
+      .insert({ participants: pgArray })
       .select('id')
       .single()
 
@@ -223,14 +228,16 @@ const sendMessage = async () => {
     const participants = [authStore.user.id, chatPartner.value.id].sort()
 
     // Insert message (trigger updates chats.last_message automatically)
-    await supabase.from('chat_messages').insert({
+    const { error: msgError } = await supabase.from('chat_messages').insert({
       chat_id: chatId,
       sender_id: authStore.user.id,
       content: msg,
       message_type: 'text'
     })
+    if (msgError) throw msgError
   } catch (err) {
     console.error("Chat Error:", err)
+    newMessage.value = msg
   }
 }
 
@@ -382,8 +389,11 @@ const backToList = () => {
 .search-box input { background: rgba(255,255,255,0.05); border: none; border-radius: 12px; padding: 12px 16px; color: var(--text-primary); width: 100%; outline: none; }
 
 .chat-list-scroll { flex: 1; overflow-y: auto; }
-.chat-item { padding: 15px 25px; display: flex; align-items: center; gap: 15px; cursor: pointer; transition: 0.2s; border-left: 4px solid transparent; }
-.chat-item:hover { background: rgba(255,255,255,0.05); }
+.chat-item { padding: 15px 25px; display: flex; align-items: center; gap: 15px; cursor: pointer; transition: background 200ms ease-out, border-color 200ms ease-out; border-left: 4px solid transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .chat-item:hover { background: rgba(255,255,255,0.05); }
+}
+.chat-item:active { background: rgba(255,255,255,0.08); }
 .chat-item.active { background: rgba(0, 230, 118, 0.08); border-left-color: var(--primary); }
 
 .item-avatar { position: relative; }
@@ -399,7 +409,8 @@ const backToList = () => {
 /* Chat Window */
 .chat-window { flex: 1; display: flex; flex-direction: column; background: rgba(0,0,0,0.2); }
 .window-header { padding: 15px 30px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.01); }
-.btn-back { display: none; background: transparent; border: none; color: var(--text-primary); cursor: pointer; }
+.btn-back { display: none; background: transparent; border: none; color: var(--text-primary); cursor: pointer; transition: transform 120ms ease-out, color 200ms ease-out; }
+.btn-back:active { transform: scale(0.9); }
 .header-user { display: flex; align-items: center; gap: 15px; cursor: pointer; }
 .h-avatar { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--primary); }
 .h-info h3 { margin: 0; font-size: 1.1rem; }
@@ -421,11 +432,17 @@ const backToList = () => {
 .window-footer { padding: 20px 30px; border-top: 1px solid var(--border); }
 .input-area { background: rgba(255,255,255,0.05); border-radius: 25px; padding: 5px 15px; display: flex; align-items: center; gap: 15px; }
 .input-area input { flex: 1; background: transparent; border: none; color: var(--text-primary); padding: 12px 5px; outline: none; font-size: 0.95rem; }
-.btn-media { background: transparent; border: none; color: var(--text-muted); cursor: pointer; display: flex; }
-.btn-media:hover { color: var(--primary); }
-.btn-send-msg { background: transparent; border: none; color: var(--primary); cursor: pointer; display: flex; padding: 8px; border-radius: 50%; }
+.btn-media { background: transparent; border: none; color: var(--text-muted); cursor: pointer; display: flex; transition: color 200ms ease-out, transform 120ms ease-out; }
+.btn-media:active { transform: scale(0.9); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-media:hover { color: var(--primary); }
+}
+.btn-send-msg { background: transparent; border: none; color: var(--primary); cursor: pointer; display: flex; padding: 8px; border-radius: 50%; transition: background 200ms ease-out, transform 120ms ease-out; }
 .btn-send-msg:disabled { opacity: 0.3; cursor: default; }
-.btn-send-msg:not(:disabled):hover { background: rgba(0, 230, 118, 0.1); }
+.btn-send-msg:active:not(:disabled) { transform: scale(0.9); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-send-msg:not(:disabled):hover { background: rgba(0, 230, 118, 0.1); }
+}
 
 .no-chat-selected { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; }
 .centered-box { max-width: 400px; opacity: 0.6; }

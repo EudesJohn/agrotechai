@@ -191,7 +191,9 @@ onMounted(async () => {
   cursor: default;
 }
 
-.prod-card:hover { transform: translateY(-10px); }
+@media (hover: hover) and (pointer: fine) {
+  .prod-card:hover { transform: translateY(-10px); }
+}
 
 .prod-visual {
   height: 220px;
@@ -225,5 +227,10 @@ onMounted(async () => {
 
 @media (max-width: 768px) {
   .history-header { flex-direction: column; gap: 20px; text-align: center; }
+  .history-empty { padding: 40px 20px; }
+  .products-grid { grid-template-columns: 1fr; gap: 16px; }
+  .history-page { padding-top: 100px; }
+  .prod-visual { height: 180px; }
+  .prod-details { padding: 16px; }
 }
 </style>

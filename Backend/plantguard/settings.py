@@ -74,8 +74,6 @@ CORS_ALLOW_CREDENTIALS = True
 from dotenv import load_dotenv
 load_dotenv(BASE_DIR / '.env')
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-
 # Supabase
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_JWT_SECRET = os.getenv('SUPABASE_JWT_SECRET')
@@ -123,6 +121,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'api',
+    'ai_engine',
 ]
 
 MIDDLEWARE = [

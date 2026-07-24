@@ -217,11 +217,13 @@ onMounted(() => {
   padding: 20px 30px;
   align-items: center;
   border-bottom: 1px solid rgba(255,255,255,0.05);
-  transition: background 0.3s;
+  transition: background 200ms ease-out;
 }
 
-.price-row:hover {
-  background: rgba(255,255,255,0.02);
+@media (hover: hover) and (pointer: fine) {
+  .price-row:hover {
+    background: rgba(255,255,255,0.02);
+  }
 }
 
 .col { display: flex; align-items: center; gap: 10px; }
@@ -247,10 +249,13 @@ onMounted(() => {
   background: transparent; border: 1px solid var(--border); color: var(--text-primary);
   padding: 8px 16px; border-radius: 8px; cursor: pointer;
   display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600;
-  transition: all 0.3s;
+  transition: border-color 200ms ease-out, color 200ms ease-out, transform 120ms ease-out;
 }
 
-.btn-alert:hover { border-color: var(--primary); color: var(--primary); }
+.btn-alert:active { transform: scale(0.95); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-alert:hover { border-color: var(--primary); color: var(--primary); }
+}
 .btn-alert.is-active { background: var(--primary); color: #000; border-color: var(--primary); box-shadow: 0 0 15px rgba(0,230,118,0.4); }
 
 .empty-results { padding: 40px; text-align: center; color: var(--text-muted); font-style: italic; }
@@ -270,5 +275,14 @@ onMounted(() => {
   .board-header { display: none; }
   .price-row { display: flex; flex-direction: column; align-items: flex-start; padding: 20px; position: relative; }
   .price-col { margin-top: 10px; }
+  .prices-page { padding-top: 100px; }
+}
+
+@media (max-width: 480px) {
+  .prices-page { padding-top: 90px; padding-bottom: 40px; }
+  .header-section { margin-bottom: 24px; }
+  .title-block p { font-size: 0.9rem; margin-top: 6px; }
+  .price-row { padding: 14px; }
+  .price-val { font-size: 1.1rem; }
 }
 </style>

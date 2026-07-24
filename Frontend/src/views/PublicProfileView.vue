@@ -6,6 +6,8 @@ import { useAuthStore } from '../authStore'
 import QuickMessageModal from '../components/QuickMessageModal.vue'
 import gsap from 'gsap'
 
+const fallbackAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E"
+
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
@@ -286,7 +288,7 @@ onMounted(() => {
           <div v-if="socialListLoading" class="mini-spinner"></div>
           <div v-else-if="socialList.length > 0" class="social-user-list">
             <div v-for="user in socialList" :key="user.uid" class="social-user-card" @click="() => { showSocialModal = false; router.push('/profile/' + user.uid); }">
-              <img :src="user.photoURL || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="social-avatar" />
+              <img :src="user.photoURL || fallbackAvatar" class="social-avatar" />
               <div class="social-info">
                 <span class="social-name">{{ user.displayName }}</span>
                 <span class="social-type">{{ user.user_type }}</span>
@@ -330,9 +332,12 @@ onMounted(() => {
 
 .profile-stats-bar { display: flex; gap: 30px; }
 .stat-item { display: flex; flex-direction: column; align-items: flex-start; }
-.clickable-stat { cursor: pointer; transition: 0.3s; }
-.clickable-stat:hover .stat-num { color: var(--primary); transform: scale(1.1); }
-.stat-num { font-size: 1.2rem; font-weight: 800; color: var(--text-primary); transition: 0.3s; }
+.clickable-stat { cursor: pointer; transition: transform 200ms ease-out; }
+@media (hover: hover) and (pointer: fine) {
+  .clickable-stat:hover .stat-num { color: var(--primary); transform: scale(1.1); }
+}
+.clickable-stat:active .stat-num { transform: scale(0.95); }
+.stat-num { font-size: 1.2rem; font-weight: 800; color: var(--text-primary); transition: color 200ms ease-out, transform 200ms ease-out; }
 .stat-label { font-size: 0.8rem; color: var(--text-muted); }
 
 .profile-actions-top { padding: 0 40px 40px; display: flex; gap: 12px; margin-top: -10px; }
@@ -341,7 +346,7 @@ onMounted(() => {
   display: flex; align-items: center; gap: 10px; padding: 12px 24px;
   border: none; border-radius: 12px; font-weight: 800; cursor: pointer;
   text-transform: uppercase; letter-spacing: 1px; font-size: 0.85rem;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
 }
 
 .btn-follow-new {
@@ -364,9 +369,13 @@ onMounted(() => {
   backdrop-filter: blur(10px);
 }
 
-.btn-premium:hover { transform: translateY(-4px) scale(1.02); }
-.btn-follow-new:not(.followed-state):hover { box-shadow: 0 12px 30px var(--primary-glow); }
-.btn-message-new:hover { background: rgba(255,255,255,0.1); border-color: var(--primary); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-premium:hover { transform: translateY(-4px) scale(1.02); }
+  .btn-follow-new:not(.followed-state):hover { box-shadow: 0 12px 30px var(--primary-glow); }
+  .btn-message-new:hover { background: rgba(255,255,255,0.1); border-color: var(--primary); }
+}
+.btn-premium:active { transform: scale(0.97); }
+.btn-message-new:active { transform: scale(0.97); }
 
 .mini-spinner-btn { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; }
 
@@ -374,8 +383,11 @@ onMounted(() => {
 .section-title { font-size: 1.2rem; color: var(--text-primary); margin-bottom: 24px; border-left: 4px solid var(--primary); padding-left: 12px; }
 
 .user-posts-feed { display: flex; flex-direction: column; gap: 20px; }
-.mini-post-card { padding: 20px; border-radius: 12px; transition: 0.3s; cursor: pointer; }
-.mini-post-card:hover { transform: translateY(-5px); border-color: var(--primary); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+.mini-post-card { padding: 20px; border-radius: 12px; transition: transform 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) {
+  .mini-post-card:hover { transform: translateY(-5px); border-color: var(--primary); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+}
+.mini-post-card:active { transform: scale(0.97); }
 .no-link { text-decoration: none; color: inherit; }
 .post-snippet { font-size: 0.95rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 12px; }
 .mini-post-img { width: 100%; border-radius: 8px; margin-bottom: 12px; }
@@ -417,17 +429,22 @@ onMounted(() => {
 .modal-header h3 { margin: 0; font-size: 1.2rem; color: var(--primary); }
 .btn-close {
   background: none; border: none; color: var(--text-primary); font-size: 1.8rem;
-  cursor: pointer; opacity: 0.6; transition: 0.3s; display: flex; align-items: center;
+  cursor: pointer; opacity: 0.6; transition: opacity 200ms ease-out, color 200ms ease-out, transform 120ms ease-out; display: flex; align-items: center;
 }
-.btn-close:hover { opacity: 1; color: var(--primary); }
+.btn-close:active { transform: scale(0.9); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-close:hover { opacity: 1; color: var(--primary); }
+}
 
 .modal-body { padding: 10px 0; overflow-y: auto; }
 .social-user-list { display: flex; flex-direction: column; }
 .social-user-card {
   display: flex; align-items: center; gap: 16px; padding: 12px 24px;
-  cursor: pointer; transition: 0.2s; border-bottom: 1px solid rgba(255,255,255,0.05);
+  cursor: pointer; transition: background 200ms ease-out; border-bottom: 1px solid rgba(255,255,255,0.05);
 }
-.social-user-card:hover { background: rgba(255,255,255,0.05); }
+@media (hover: hover) and (pointer: fine) {
+  .social-user-card:hover { background: rgba(255,255,255,0.05); }
+}
 .social-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); }
 .social-info { display: flex; flex-direction: column; }
 .social-name { font-weight: 700; color: var(--text-primary); }

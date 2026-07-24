@@ -1,0 +1,8 @@
+# ==========================================
+# Dependances avancees IA (optionnelles)
+# Necessite : Vercel Pro ou GPU / beaucoup de RAM
+# ==========================================
+sentence-transformers
+chromadb
+opencv-python-headless
+scikit-image

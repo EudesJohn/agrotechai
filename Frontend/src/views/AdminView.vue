@@ -89,13 +89,16 @@ onMounted(() => {
 
 .stat-card {
   text-align: center; padding: 40px 20px;
-  transition: all 0.4s ease;
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
 }
 
-.stat-card:hover {
-  transform: translateY(-10px) scale(1.05);
-  box-shadow: 0 20px 40px rgba(0,230,118,0.3);
+@media (hover: hover) and (pointer: fine) {
+  .stat-card:hover {
+    transform: translateY(-10px) scale(1.05);
+    box-shadow: 0 20px 40px rgba(0,230,118,0.3);
+  }
 }
+.stat-card:active { transform: scale(0.97); }
 
 .stat-icon {
   margin-bottom: 20px;

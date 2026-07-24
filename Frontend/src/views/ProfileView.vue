@@ -6,6 +6,8 @@ import { sectors, communesBenin } from '../constants'
 import { supabase } from '../supabase'
 import gsap from 'gsap'
 
+const fallbackAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E"
+
 const authStore = useAuthStore()
 const router = useRouter()
 
@@ -386,7 +388,7 @@ onMounted(() => {
           <div v-if="socialListLoading" class="mini-spinner"></div>
           <div v-else-if="socialList.length > 0" class="social-user-list">
             <div v-for="user in socialList" :key="user.uid" class="social-user-card" @click="() => { showSocialModal = false; router.push('/profile/' + user.uid); }">
-              <img :src="user.photoURL || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="social-avatar" />
+              <img :src="user.photoURL || fallbackAvatar" class="social-avatar" />
               <div class="social-info">
                 <span class="social-name">{{ user.displayName }}</span>
                 <span class="social-type">{{ user.user_type }}</span>
@@ -459,10 +461,13 @@ onMounted(() => {
   border: none; cursor: pointer; z-index: 3;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-  transition: transform 0.3s;
+  transition: transform 200ms ease-out;
 }
 
-.edit-avatar-btn:hover { transform: scale(1.1) rotate(15deg); }
+@media (hover: hover) and (pointer: fine) {
+  .edit-avatar-btn:hover { transform: scale(1.1) rotate(15deg); }
+}
+.edit-avatar-btn:active { transform: scale(0.95); }
 
 .profile-img-preview {
   width: 100%;
@@ -490,10 +495,13 @@ onMounted(() => {
   border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
 }
 
-.h-stat { display: flex; flex-direction: column; gap: 4px; transition: 0.3s; }
+.h-stat { display: flex; flex-direction: column; gap: 4px; transition: transform 200ms ease-out; }
 .clickable-stat { cursor: pointer; }
-.clickable-stat:hover .h-val { color: var(--primary); transform: scale(1.1); }
-.h-val { font-size: 1.5rem; font-weight: 800; color: var(--text-primary); transition: 0.3s; }
+@media (hover: hover) and (pointer: fine) {
+  .clickable-stat:hover .h-val { color: var(--primary); transform: scale(1.1); }
+}
+.clickable-stat:active .h-val { transform: scale(0.95); }
+.h-val { font-size: 1.5rem; font-weight: 800; color: var(--text-primary); transition: color 200ms ease-out, transform 200ms ease-out; }
 .h-lbl { font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
 
 .btn-logout-modern {
@@ -508,14 +516,17 @@ onMounted(() => {
   color: var(--danger);
   font-weight: 700;
   cursor: pointer;
-  transition: 0.3s;
+  transition: background 200ms ease-out, border-color 200ms ease-out, transform 160ms ease-out;
 }
 
-.btn-logout-modern:hover {
-  background: rgba(255, 82, 82, 0.1);
-  border-color: rgba(255, 82, 82, 0.3);
-  transform: translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+  .btn-logout-modern:hover {
+    background: rgba(255, 82, 82, 0.1);
+    border-color: rgba(255, 82, 82, 0.3);
+    transform: translateY(-2px);
+  }
 }
+.btn-logout-modern:active { transform: scale(0.97); }
 
 .logout-icon-box {
   width: 36px;
@@ -554,7 +565,7 @@ input, select, textarea {
   width: 100%; padding: 16px 16px 16px 48px;
   background: rgba(255,255,255,0.03); border: 1px solid var(--border);
   color: var(--text-primary); border-radius: 14px; font-size: 1rem; outline: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 200ms ease-out, background 200ms ease-out, box-shadow 200ms ease-out;
 }
 
 textarea { padding-left: 20px; }
@@ -587,11 +598,14 @@ option {
   width: 100%; height: 64px; font-size: 1.1rem;
   background: linear-gradient(135deg, var(--primary), #00c853);
   color: var(--bg-darker); border: none; border-radius: 18px;
-  font-weight: 800; cursor: pointer; transition: 0.4s;
+  font-weight: 800; cursor: pointer; transition: transform 200ms ease-out, box-shadow 200ms ease-out;
   box-shadow: 0 10px 30px var(--primary-glow);
 }
 
-.btn-save:hover { transform: translateY(-4px); box-shadow: 0 15px 40px var(--primary-glow); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-save:hover { transform: translateY(-4px); box-shadow: 0 15px 40px var(--primary-glow); }
+}
+.btn-save:active { transform: scale(0.97); }
 
 .loading-state { text-align: center; padding: 100px; width: 100%; }
 .spinner { width: 50px; height: 50px; border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; margin: 0 auto 20px; animation: spin 1s linear infinite; }
@@ -619,18 +633,23 @@ option {
 .modal-header h3 { margin: 0; font-size: 1.2rem; color: var(--primary); }
 .btn-close {
   background: none; border: none; color: var(--text-primary); font-size: 1.8rem;
-  cursor: pointer; opacity: 0.6; transition: 0.3s; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; opacity: 0.6; transition: opacity 200ms ease-out, color 200ms ease-out, transform 120ms ease-out; display: flex; align-items: center; justify-content: center;
 }
-.btn-close:hover { opacity: 1; color: var(--primary); }
+.btn-close:active { transform: scale(0.9); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-close:hover { opacity: 1; color: var(--primary); }
+}
 
 .modal-body { padding: 10px 0; overflow-y: auto; }
 .social-user-list { display: flex; flex-direction: column; }
 .social-user-card {
   display: flex; align-items: center; gap: 16px; padding: 12px 24px;
-  cursor: pointer; transition: 0.2s; border-bottom: 1px solid rgba(255,255,255,0.05);
+  cursor: pointer; transition: background 200ms ease-out; border-bottom: 1px solid rgba(255,255,255,0.05);
   text-align: left;
 }
-.social-user-card:hover { background: rgba(255,255,255,0.05); }
+@media (hover: hover) and (pointer: fine) {
+  .social-user-card:hover { background: rgba(255,255,255,0.05); }
+}
 .social-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); }
 .social-info { display: flex; flex-direction: column; }
 .social-name { font-weight: 700; color: var(--text-primary); }
@@ -645,7 +664,12 @@ option {
 }
 
 @media (max-width: 768px) {
+  .profile-page { padding-top: 100px; padding-bottom: 60px; }
   .grid-2 { grid-template-columns: 1fr; gap: 0; }
-  .form-section { padding: 24px; }
+  .form-section { padding: 24px 16px; }
+  .profile-hero { padding: 32px 16px; }
+  .hero-stats { gap: 20px; margin: 24px 0; padding: 16px 0; }
+  .premium-field { margin-bottom: 12px; }
+  .social-user-card { padding: 12px 16px; }
 }
 </style>

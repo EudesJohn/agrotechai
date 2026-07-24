@@ -132,6 +132,12 @@ onMounted(() => {
 
 <template>
   <div class="app-shell">
+    <!-- Fond 3D fixe du site (Bouquet / Blossom) -->
+    <div class="site-bg" aria-hidden="true">
+      <div class="site-bg-glow"></div>
+      <div class="site-bg-image"></div>
+    </div>
+
     <header class="navbar">
       <div class="container nav-inner">
         <div class="logo-area">
@@ -393,11 +399,12 @@ onMounted(() => {
   font-weight: 600;
   color: var(--text-muted);
   font-size: 1.05rem;
-  transition: color 0.3s;
+  transition: color 200ms ease-out;
   position: relative;
 }
 
-.nav-item:hover, .nav-item.router-link-active { color: #fff; }
+@media (hover: hover) and (pointer: fine) { .nav-item:hover { color: #fff; } }
+.nav-item.router-link-active { color: #fff; }
 .nav-item.router-link-active::after {
   content: '';
   position: absolute;
@@ -407,6 +414,12 @@ onMounted(() => {
 }
 
 .nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.nav-actions .desktop-only {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -474,7 +487,9 @@ onMounted(() => {
   position: absolute; top: 24px; right: 24px;
   background: transparent; border: none; color: #fff;
   font-size: 1.2rem; cursor: pointer; opacity: 0.5;
+  transition: opacity 200ms ease-out;
 }
+.close-auth:active { transform: scale(0.9); }
 
 .auth-intro { text-align: center; margin-bottom: 32px; }
 .auth-title { font-size: clamp(1.5rem, 4vw, 2rem) !important; margin-bottom: 8px; }
@@ -497,7 +512,7 @@ onMounted(() => {
   font-weight: 700;
   cursor: pointer;
   opacity: 0.8;
-  transition: 0.3s;
+  transition: opacity 200ms ease-out;
 }
 
 .forgot-link:hover { opacity: 1; text-decoration: underline; }
@@ -506,11 +521,14 @@ onMounted(() => {
   width: 100%; height: 50px; border-radius: 12px;
   border: 1px solid var(--border); background: #fff; color: #000;
   font-weight: 700; display: flex; align-items: center; justify-content: center;
-  gap: 12px; cursor: pointer; transition: 0.3s;
+  gap: 12px; cursor: pointer; transition: transform 200ms ease-out, background 200ms ease-out;
 }
 
 .google-btn img { width: 22px; }
-.google-btn:hover { background: #f5f5f5; transform: translateY(-2px); }
+@media (hover: hover) and (pointer: fine) {
+  .google-btn:hover { background: #f5f5f5; transform: translateY(-2px); }
+}
+.google-btn:active { transform: scale(0.97); }
 
 .auth-sep {
   text-align: center; margin: 24px 0; position: relative;
@@ -528,7 +546,7 @@ onMounted(() => {
 input, select {
   width: 100%; padding: 14px; border-radius: 10px;
   background: rgba(255,255,255,0.03); border: 1px solid var(--border);
-  color: #fff; font-size: 1rem; outline: none; transition: 0.3s;
+  color: #fff; font-size: 1rem; outline: none; transition: border-color 200ms ease-out, background 200ms ease-out, box-shadow 200ms ease-out;
 }
 
 input:focus { border-color: var(--primary); background: rgba(255,255,255,0.06); }
@@ -548,6 +566,23 @@ option {
 .mt-24 { margin-top: 24px; }
 
 .btn-back { background: transparent; border: none; color: var(--text-muted); width: 100%; margin-top: 15px; cursor: pointer; }
+
+/* Responsive Auth Modal */
+@media (max-width: 768px) {
+  .auth-card { padding: 32px 24px; }
+  .auth-card-wide { max-width: 100%; }
+  .grid-2 { grid-template-columns: 1fr; gap: 0; }
+  .auth-intro { margin-bottom: 24px; }
+  .auth-sep { margin: 18px 0; }
+  .mt-32 { margin-top: 24px; }
+  .auth-footer { margin-top: 24px; }
+}
+
+@media (max-width: 480px) {
+  .auth-card { padding: 24px 16px; }
+  .auth-overlay { padding: 10px; align-items: flex-start; padding-top: 60px; }
+  .google-btn { height: 44px; font-size: 0.9rem; }
+}
 
 /* Transitions */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
@@ -569,7 +604,7 @@ option {
   width: 25px;
   height: 2px;
   background: #fff;
-  transition: 0.3s;
+  transition: transform 200ms ease-out, opacity 200ms ease-out;
 }
 
 .mobile-menu-btn.active span:nth-child(1) { transform: translateY(8px) rotate(45deg); }
@@ -608,6 +643,11 @@ option {
   color: #fff;
   font-size: 2rem;
   cursor: pointer;
+  transition: transform 120ms ease-out, color 200ms ease-out;
+}
+
+.close-btn:active {
+  transform: scale(0.9);
 }
 
 .mobile-nav-links {
@@ -621,12 +661,16 @@ option {
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--text-muted);
-  transition: 0.3s;
+  transition: color 200ms ease-out, transform 200ms ease-out;
 }
 
 .m-nav-item:hover, .m-nav-item.router-link-active {
   color: var(--primary);
-  transform: translateX(10px);
+}
+@media (hover: hover) and (pointer: fine) {
+  .m-nav-item:hover {
+    transform: translateX(10px);
+  }
 }
 
 .m-divider {
@@ -648,7 +692,7 @@ option {
   font-weight: 600;
 }
 
-.m-btn { margin-top: 10px; width: 100%; }
+.m-btn { width: 100%; }
 
 @media (max-width: 992px) {
   .desktop-only { display: none !important; }
@@ -663,12 +707,85 @@ option {
   .logo-symbol { font-size: 1.5rem; }
   .logo-symbol svg { width: 22px; height: 22px; }
   .nav-actions { gap: 8px; }
+  .main-content { padding-top: 75px; }
+  .mobile-menu-panel { padding: 28px 20px; }
 }
 
 /* Transitions */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
-.slide-right-enter-active, .slide-right-leave-active { transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.slide-right-enter-active { transition: transform 350ms cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.slide-right-leave-active { transition: transform 200ms ease-out; }
 .slide-right-enter-from, .slide-right-leave-to { transform: translateX(100%); }
+
+/* ─── Site Background 3D ─── */
+.site-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.site-bg-glow {
+  position: absolute;
+  top: 60%;
+  right: 10%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(0, 230, 118, 0.06) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(60px);
+  animation: bg-glow-drift 14s ease-in-out infinite;
+}
+
+.site-bg-image {
+  position: absolute;
+  top: 50%;
+  right: 5%;
+  width: 500px;
+  height: 500px;
+  background-image: url('https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bouquet/3D/bouquet_3d.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.07;
+  transform: translateY(-50%);
+  animation: bg-float 20s ease-in-out infinite;
+  filter: blur(0.5px);
+}
+
+@keyframes bg-float {
+  0%, 100% {
+    transform: translateY(-50%) translateX(0) scale(1);
+    opacity: 0.07;
+  }
+  25% {
+    transform: translateY(-55%) translateX(15px) scale(1.05);
+    opacity: 0.09;
+  }
+  50% {
+    transform: translateY(-48%) translateX(-10px) scale(0.97);
+    opacity: 0.06;
+  }
+  75% {
+    transform: translateY(-52%) translateX(20px) scale(1.03);
+    opacity: 0.08;
+  }
+}
+
+@keyframes bg-glow-drift {
+  0%, 100% { transform: translate(0, 0); opacity: 0.6; }
+  33% { transform: translate(30px, -20px); opacity: 1; }
+  66% { transform: translate(-20px, 15px); opacity: 0.4; }
+}
+
+@media (max-width: 768px) {
+  .site-bg-image { width: 300px; height: 300px; opacity: 0.04; }
+  .site-bg-glow { width: 350px; height: 350px; }
+}
 </style>

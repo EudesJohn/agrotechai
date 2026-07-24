@@ -1,5 +1,7 @@
 <script setup>
-import PlantLeaf3D from '../components/PlantLeaf3D.vue'
+import HeroScene3D from '../components/HeroScene3D.vue'
+import PlantIllustration from '../components/PlantIllustration.vue'
+import StatsCards from '../components/StatsCards.vue'
 import { useRouter } from 'vue-router'
 import { onMounted, ref, inject, computed } from 'vue'
 import { useAuthStore } from '../authStore'
@@ -9,6 +11,18 @@ import { supabase } from '../supabase'
 import { plantDatabase } from '../plantData'
 import DOMPurify from 'dompurify'
 import api from '../api'
+
+const growingProgress = ref(0)
+
+// Fallback avatar pour éviter les conflits de quotes dans les data URIs
+const fallbackAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E"
+
+// Filtrer les URLs d'avatar invalides (ex: placeholder défunts)
+const safeAvatar = (url) => {
+  if (!url) return ''
+  if (url.includes('via.placeholder.com') || url.includes('placeholder')) return ''
+  return url
+}
 
 const router = useRouter()
 gsap.registerPlugin(ScrollTrigger)
@@ -178,7 +192,7 @@ const fetchRecentPosts = async () => {
           .single()
         if (profile) {
           authorName = profile.display_name || 'Expert'
-          authorPic = profile.avatar_url || ''
+          authorPic = safeAvatar(profile.avatar_url)
         }
       }
 
@@ -215,7 +229,9 @@ const fetchRecentPosts = async () => {
     }))
     
     setTimeout(() => {
-      gsap.from(".home-post-card", {
+      const cards = document.querySelectorAll(".home-post-card")
+      if (cards.length > 0) {
+        gsap.from(cards, {
         scrollTrigger: {
           trigger: ".home-feed-grid",
           start: "top 85%",
@@ -226,6 +242,7 @@ const fetchRecentPosts = async () => {
         stagger: 0.2,
         ease: "power2.out"
       })
+      }
     }, 200)
   } catch (err) {
     console.error("Home feed error:", err)
@@ -345,7 +362,7 @@ onMounted(() => {
   tl.from(".hero-badge", { y: -20, opacity: 0, duration: 0.8, ease: "power3.out" })
     .from("h1 .line", { y: 100, opacity: 0, duration: 1, stagger: 0.2, ease: "power4.out" }, "-=0.4")
     .from(".hero-description", { opacity: 0, x: -30, duration: 1 }, "-=0.6")
-    .from(".hero-search-wrapper-new", { y: 20, opacity: 0, duration: 0.8, ease: "power2.out" }, "-=0.7")
+    .from(".ai-search-trigger-section", { y: 20, opacity: 0, duration: 0.8, ease: "power2.out" }, "-=0.7")
     .from(".hero-actions .btn", { scale: 0.8, opacity: 0, duration: 0.8, stagger: 0.2, ease: "back.out(1.7)" }, "-=0.5")
 
   // Statistics Grid Animation
@@ -374,20 +391,32 @@ onMounted(() => {
     ease: "power2.out"
   })
 
-  // Parallax on 3D Element
-  gsap.to(".hero-3d-container", {
+  // Parallax léger sur Hero 3D
+  gsap.to(".hero-illustration-wrapper", {
     scrollTrigger: {
       trigger: ".hero-wrapper",
       start: "top top",
       end: "bottom top",
-      scrub: true
+      scrub: 1.2
     },
-    y: 150,
-    scale: 1.1,
-    rotate: 10
+    y: 80,
+    scale: 1.05,
   })
 
   fetchRecentPosts()
+
+  // Growing Plant Scroll Animation
+  gsap.to(growingProgress, {
+    value: 1,
+    scrollTrigger: {
+      trigger: ".growing-section",
+      start: "top bottom",
+      end: "center center",
+      scrub: 1.5,
+    },
+    ease: "power2.out",
+    duration: 2,
+  })
 })
 </script>
 
@@ -395,8 +424,8 @@ onMounted(() => {
   <div class="home-container">
     <!-- Hero Section -->
     <section class="hero-wrapper">
-      <div class="hero-3d-container">
-        <PlantLeaf3D />
+      <div class="hero-illustration-wrapper">
+        <HeroScene3D />
       </div>
       
       <div class="container hero-content">
@@ -624,7 +653,7 @@ onMounted(() => {
         <div v-for="post in recentPosts" :key="post.id" class="home-post-card glass-panel">
           <div class="hp-head">
             <RouterLink :to="'/profile/' + post.authorId" class="hp-avatar-link">
-              <img :src="post.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="hp-avatar" />
+              <img :src="post.authorPic || fallbackAvatar" class="hp-avatar" @error="e => e.target.src = fallbackAvatar" />
             </RouterLink>
             <div class="hp-meta">
               <RouterLink :to="'/profile/' + post.authorId" class="hp-author-name">
@@ -673,7 +702,7 @@ onMounted(() => {
                   <div v-for="c in post.comments.filter(cm => !cm.parentId)" :key="c.id" class="c-group-mini">
                     <div class="c-item-mini">
                       <RouterLink :to="'/profile/' + c.authorId" class="c-avatar-link">
-                        <img :src="c.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="c-avatar-mini" />
+                        <img :src="c.authorPic || fallbackAvatar" class="c-avatar-mini" @error="e => e.target.src = fallbackAvatar" />
                       </RouterLink>
                       <div class="c-body-mini">
                         <RouterLink :to="'/profile/' + c.authorId" class="c-author-name">
@@ -717,6 +746,35 @@ onMounted(() => {
           <span class="btn-text">Explorer tout le flux</span>
           <svg class="btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </button>
+      </div>
+    </section>
+
+    <!-- Growing Plant 3D Section -->
+    <section class="growing-section">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="text-glow">Votre Culture en Image</h2>
+          <p>Visualisez la croissance de vos plants avec notre moteur de visualisation interactif.</p>
+        </div>
+        <div class="growing-3d-wrapper glass-panel">
+          <PlantIllustration :progress="growingProgress" color="#4caf50" />
+        </div>
+        <div class="growing-controls">
+          <input
+            v-model.number="growingProgress"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            class="growing-slider"
+          />
+          <div class="growing-labels">
+            <span>Semence</span>
+            <span>Germination</span>
+            <span>Croissance</span>
+            <span>Floraison</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -783,7 +841,7 @@ onMounted(() => {
   padding-top: 80px;
 }
 
-.hero-3d-container {
+.hero-illustration-wrapper {
   position: absolute;
   top: 0;
   right: -5%;
@@ -791,6 +849,7 @@ onMounted(() => {
   height: 100%;
   z-index: 1;
   opacity: 0.8;
+  will-change: transform;
 }
 
 .hero-content {
@@ -807,7 +866,7 @@ onMounted(() => {
 .hero-badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   padding: 6px 12px;
   background: rgba(0, 230, 118, 0.1);
   border: 1px solid var(--border-bright);
@@ -883,16 +942,18 @@ h1 .line {
   color: var(--text-primary);
   font-size: 1.05rem;
   font-weight: 700;
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
   box-shadow: 0 0 30px var(--primary-glow), 0 4px 20px rgba(0,0,0,0.3);
   animation: pill-pulse 3s ease-in-out infinite;
   -webkit-tap-highlight-color: transparent;
 }
 
-.ai-search-pill:hover {
-  background: linear-gradient(135deg, rgba(0,230,118,0.25), rgba(0,163,230,0.15));
-  box-shadow: 0 0 50px rgba(0,230,118,0.4), 0 8px 30px rgba(0,0,0,0.4);
-  transform: translateY(-2px) scale(1.02);
+@media (hover: hover) and (pointer: fine) {
+  .ai-search-pill:hover {
+    background: linear-gradient(135deg, rgba(0,230,118,0.25), rgba(0,163,230,0.15));
+    box-shadow: 0 0 50px rgba(0,230,118,0.4), 0 8px 30px rgba(0,0,0,0.4);
+    transform: translateY(-2px) scale(1.02);
+  }
 }
 
 .ai-search-pill:active {
@@ -929,7 +990,7 @@ h1 .line {
 
 .search-hints {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -941,13 +1002,15 @@ h1 .line {
   font-size: 0.78rem;
   color: rgba(255,255,255,0.7);
   cursor: pointer;
-  transition: 0.3s;
+  transition: background 200ms ease-out, border-color 200ms ease-out, color 200ms ease-out;
   -webkit-tap-highlight-color: transparent;
 }
-.hint-chip:hover {
-  background: rgba(0,230,118,0.1);
-  border-color: var(--primary);
-  color: var(--primary);
+@media (hover: hover) and (pointer: fine) {
+  .hint-chip:hover {
+    background: rgba(0,230,118,0.1);
+    border-color: var(--primary);
+    color: var(--primary);
+  }
 }
 
 /* ========================
@@ -1013,7 +1076,7 @@ h1 .line {
   border: 1px solid rgba(0,230,118,0.25);
   border-radius: 14px;
   padding: 12px 18px;
-  transition: border-color 0.3s;
+  transition: border-color 200ms ease-out, box-shadow 200ms ease-out;
 }
 
 .modal-input-wrapper:focus-within {
@@ -1060,12 +1123,15 @@ h1 .line {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: 0.3s;
+  transition: transform 160ms ease-out, background 160ms ease-out;
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
 }
 
-.modal-ask-btn:hover:not(:disabled) { background: #00ff88; transform: scale(1.05); }
+@media (hover: hover) and (pointer: fine) {
+  .modal-ask-btn:hover:not(:disabled) { background: #00ff88; transform: scale(1.05); }
+}
+.modal-ask-btn:active:not(:disabled) { transform: scale(0.95); }
 .modal-ask-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .modal-close-btn {
@@ -1080,11 +1146,14 @@ h1 .line {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: 0.3s;
+  transition: background 200ms ease-out, color 200ms ease-out;
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
 }
-.modal-close-btn:hover { background: rgba(255,59,59,0.15); color: #ff5252; }
+.modal-close-btn:active { transform: scale(0.9); }
+@media (hover: hover) and (pointer: fine) {
+  .modal-close-btn:hover { background: rgba(255,59,59,0.15); color: #ff5252; }
+}
 
 .modal-loader {
   width: 18px; height: 18px;
@@ -1108,7 +1177,7 @@ h1 .line {
 .sugg-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 14px;
   margin-bottom: 20px;
 }
 
@@ -1121,16 +1190,18 @@ h1 .line {
   border: 1px solid rgba(255,255,255,0.06);
   border-radius: 14px;
   cursor: pointer;
-  transition: 0.3s;
+  transition: background 200ms ease-out, border-color 200ms ease-out, color 200ms ease-out;
   color: rgba(255,255,255,0.7);
   font-size: 0.85rem;
   font-weight: 600;
   -webkit-tap-highlight-color: transparent;
 }
-.sugg-card:hover {
-  background: rgba(0,230,118,0.06);
-  border-color: rgba(0,230,118,0.3);
-  color: var(--primary);
+@media (hover: hover) and (pointer: fine) {
+  .sugg-card:hover {
+    background: rgba(0,230,118,0.06);
+    border-color: rgba(0,230,118,0.3);
+    color: var(--primary);
+  }
 }
 .sugg-emoji { font-size: 1.4rem; flex-shrink: 0; }
 
@@ -1199,9 +1270,11 @@ h1 .line {
   color: rgba(255,255,255,0.5);
   font-size: 0.75rem;
   cursor: pointer;
-  transition: 0.3s;
+  transition: border-color 200ms ease-out, color 200ms ease-out;
 }
-.ai-copy-btn:hover { border-color: var(--primary); color: var(--primary); }
+@media (hover: hover) and (pointer: fine) {
+  .ai-copy-btn:hover { border-color: var(--primary); color: var(--primary); }
+}
 
 .ai-response-content {
   padding: 20px;
@@ -1248,10 +1321,12 @@ h1 .line {
   border: 1px solid rgba(255,255,255,0.06);
   border-radius: 12px;
   cursor: pointer;
-  transition: 0.3s;
+  transition: background 200ms ease-out, border-color 200ms ease-out;
   -webkit-tap-highlight-color: transparent;
 }
-.local-res-card:hover { background: rgba(0,230,118,0.05); border-color: rgba(0,230,118,0.2); }
+@media (hover: hover) and (pointer: fine) {
+  .local-res-card:hover { background: rgba(0,230,118,0.05); border-color: rgba(0,230,118,0.2); }
+}
 .local-res-card img { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
 .local-res-info h5 { color: #fff; font-size: 0.95rem; margin: 0 0 4px; }
 .local-res-info p { color: rgba(255,255,255,0.45); font-size: 0.8rem; margin: 0; }
@@ -1312,11 +1387,11 @@ h1 .line {
   background: rgba(255, 255, 255, 0.03);
   border-radius: 18px;
   border: 1px solid var(--border);
-  transition: 0.3s;
+  transition: background 200ms ease-out, border-color 200ms ease-out;
 }
 
-.integrated-res-card:hover { 
-  background: rgba(255, 255, 255, 0.06); 
+.integrated-res-card:hover {
+  background: rgba(255, 255, 255, 0.06);
   border-color: var(--primary);
 }
 
@@ -1343,12 +1418,14 @@ h1 .line {
 .sample-questions {
   margin-top: 30px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
 }
-.chip { 
-  background: rgba(255,255,255,0.05); border: 1px solid var(--border); 
-  color: #fff; padding: 8px 16px; border-radius: 100px; cursor: pointer; 
-  font-size: 0.85rem; transition: 0.3s;
+.chip {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+  color: #fff; padding: 8px 16px; border-radius: 100px; cursor: pointer;
+  font-size: 0.85rem; transition: background 200ms ease-out, color 200ms ease-out;
 }
-.chip:hover { background: var(--primary); color: #000; }
+@media (hover: hover) and (pointer: fine) {
+  .chip:hover { background: var(--primary); color: #000; }
+}
 
 /* Transitions */
 .fade-scale-enter-active, .fade-scale-leave-active { transition: all 0.4s ease; }
@@ -1389,7 +1466,7 @@ h1 .line {
     margin-left: auto;
     margin-right: auto;
   }
-  .hero-3d-container {
+  .hero-illustration-wrapper {
     opacity: 0.3;
     right: 0;
     width: 100%;
@@ -1541,16 +1618,19 @@ h1 .line {
 }
 
 /* Home Social Interactions */
-.post-interactions { border-top: 1px solid var(--border); padding-top: 12px; position: relative; }
+.post-interactions { border-top: 1px solid var(--border); padding-top: 16px; position: relative; }
 .i-summary { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px; }
 .reactions-summary { display: flex; gap: 6px; }
-.i-actions-mini { display: flex; gap: 16px; border-top: 1px solid var(--border); padding-top: 10px; }
+.i-actions-mini { display: flex; gap: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
 .i-btn-mini { 
   background: transparent; border: none; color: var(--text-muted); 
-  font-size: 1rem; cursor: pointer; transition: 0.3s;
+  font-size: 1rem; cursor: pointer; transition: color 200ms ease-out;
   display: flex; align-items: center; justify-content: center;
 }
-.i-btn-mini:hover, .i-btn-mini.active-r { color: var(--primary); }
+@media (hover: hover) and (pointer: fine) {
+  .i-btn-mini:hover { color: var(--primary); }
+}
+.i-btn-mini.active-r { color: var(--primary); }
 
 .reaction-trigger { position: relative; }
 .reaction-popover {
@@ -1558,8 +1638,10 @@ h1 .line {
   padding: 8px 12px; border-radius: 20px; margin-bottom: 8px; z-index: 100;
   box-shadow: 0 10px 40px rgba(0,0,0,0.5);
 }
-.reaction-popover span { font-size: 1.2rem; cursor: pointer; transition: 0.2s; }
-.reaction-popover span:hover { transform: scale(1.3); }
+.reaction-popover span { font-size: 1.2rem; cursor: pointer; transition: transform 200ms ease-out; }
+@media (hover: hover) and (pointer: fine) {
+  .reaction-popover span:hover { transform: scale(1.3); }
+}
 
 .comments-drawer-mini { border-top: 1px dashed var(--border); padding-top: 10px; }
 .c-item-mini { display: flex; gap: 10px; margin-bottom: 10px; }
@@ -1602,20 +1684,28 @@ h1 .line {
   cursor: pointer;
   overflow: hidden;
   box-shadow: 0 10px 40px rgba(0, 230, 118, 0.3);
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
 }
 
-.btn-premium:hover {
-  transform: translateY(-5px) scale(1.02);
-  box-shadow: 0 20px 60px rgba(0, 230, 118, 0.5);
+@media (hover: hover) and (pointer: fine) {
+  .btn-premium:hover {
+    transform: translateY(-5px) scale(1.02);
+    box-shadow: 0 20px 60px rgba(0, 230, 118, 0.5);
+  }
+}
+
+.btn-premium:active {
+  transform: scale(0.97);
 }
 
 .btn-premium .btn-arrow {
-  transition: transform 0.3s ease;
+  transition: transform 200ms ease-out;
 }
 
-.btn-premium:hover .btn-arrow {
-  transform: translateX(5px);
+@media (hover: hover) and (pointer: fine) {
+  .btn-premium:hover .btn-arrow {
+    transform: translateX(5px);
+  }
 }
 
 .cta-glow-bg {
@@ -1651,7 +1741,7 @@ h1 .line {
 }
 
 .feat-btn {
-  margin-top: 24px;
+  margin-top: 32px;
   background: transparent;
   border: none;
   color: var(--primary);
@@ -1660,11 +1750,13 @@ h1 .line {
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: gap 0.3s;
+  transition: gap 200ms ease-out;
 }
 
-.feat-card:hover .feat-btn {
-  gap: 15px;
+@media (hover: hover) and (pointer: fine) {
+  .feat-card:hover .feat-btn {
+    gap: 15px;
+  }
 }
 
 /* Steps Section */
@@ -1736,6 +1828,10 @@ h1 .line {
   z-index: 1;
 }
 
+.cta-content .btn {
+  margin-top: 36px;
+}
+
 /* Footer */
 .home-footer {
   padding: 60px 0;
@@ -1763,15 +1859,17 @@ h1 .line {
 
 .footer-links span {
   cursor: pointer;
-  transition: color 0.3s ease;
+  transition: color 200ms ease-out;
 }
 
-.footer-links span:hover {
-  color: var(--primary);
+@media (hover: hover) and (pointer: fine) {
+  .footer-links span:hover {
+    color: var(--primary);
+  }
 }
 
 @media (max-width: 992px) {
-  .hero-3d-container { right: -20%; width: 80%; opacity: 0.5; }
+  .hero-illustration-wrapper { right: -20%; width: 80%; opacity: 0.5; }
   .hero-inner { max-width: 100%; text-align: center; }
   .hero-actions { justify-content: center; }
   .features-grid { grid-template-columns: 1fr; }
@@ -1833,7 +1931,7 @@ h1 .line {
     font-size: 0.9rem !important;
   }
   
-  .hero-3d-container { display: none !important; }
+  .hero-illustration-wrapper { display: none !important; }
   .hero-content { padding-top: 20px !important; }
   
   .stats-section { margin-top: -20px !important; padding: 30px 0 !important; }
@@ -1865,7 +1963,9 @@ h1 .line {
 }
 
 .hp-author-name, .c-author-name { text-decoration: none; }
-.hp-author-name:hover h5, .c-author-name:hover h6 { color: var(--primary); }
+@media (hover: hover) and (pointer: fine) {
+  .hp-author-name:hover h5, .c-author-name:hover h6 { color: var(--primary); }
+}
 .hp-avatar-link, .c-avatar-link { display: block; border-radius: 50%; overflow: hidden; }
 
 /* Scroll Indicator Fix */
@@ -1916,55 +2016,6 @@ h1 .line {
 @keyframes slideIn { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .animate-slide-in { animation: slideIn 0.5s forwards; }
 
-.integrated-res-card:hover { 
-  background: rgba(255, 255, 255, 0.06); 
-  border-color: var(--primary);
-}
-
-.res-visual { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
-.res-visual img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; }
-.res-tag { position: absolute; top: -5px; right: -5px; background: var(--primary); color: #000; font-size: 0.6rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; }
-
-.res-details { flex: 1; display: flex; flex-direction: column; gap: 8px; }
-.res-details h4 { font-size: 1.3rem; color: var(--primary); margin: 0; }
-.res-usage-text { font-size: 1rem; color: #fff; line-height: 1.5; }
-
-.res-tips-box {
-  background: rgba(0, 230, 118, 0.05);
-  border-left: 2px solid var(--primary);
-  padding: 8px 12px;
-  margin-top: 5px;
-}
-.tips-label { font-size: 0.7rem; font-weight: 800; color: var(--primary); text-transform: uppercase; display: block; }
-.res-tips-box p { font-size: 0.9rem; color: var(--text-muted); margin: 0; }
-
-.no-results-integrated { text-align: center; padding: 40px 0; }
-.ai-brain-icon { font-size: 4rem; margin-bottom: 20px; filter: drop-shadow(0 0 15px var(--primary)); }
-
-.sample-questions {
-  margin-top: 30px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
-}
-.chip { 
-  background: rgba(255,255,255,0.05); border: 1px solid var(--border); 
-  color: #fff; padding: 8px 16px; border-radius: 100px; cursor: pointer; 
-  font-size: 0.85rem; transition: 0.3s;
-}
-.chip:hover { background: var(--primary); color: #000; }
-
-/* Transitions */
-.fade-scale-enter-active, .fade-scale-leave-active { transition: all 0.4s ease; }
-.fade-scale-enter-from, .fade-scale-leave-to { opacity: 0; transform: scale(1.05); }
-
-@keyframes popIn { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-.animate-pop-in { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-
-@media (max-width: 768px) {
-  .integrated-res-card { flex-direction: column; gap: 15px; }
-  .res-visual { width: 100%; height: 180px; }
-  .hero-search-wrapper-new { max-width: 100%; margin: 20px 0; }
-  .search-results-panel { max-height: 95vh; margin: 0; border-radius: 0; }
-}
-
 /* New Search Trigger Button */
 .btn-search-trigger {
   background: var(--primary);
@@ -1979,13 +2030,19 @@ h1 .line {
   font-size: 0.9rem;
   margin-right: 6px;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
   box-shadow: 0 4px 15px var(--primary-glow);
 }
 
-.btn-search-trigger:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px var(--primary-glow);
+@media (hover: hover) and (pointer: fine) {
+  .btn-search-trigger:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px var(--primary-glow);
+  }
+}
+
+.btn-search-trigger:active {
+  transform: scale(0.97);
 }
 
 .ai-search-cta {
@@ -2020,10 +2077,14 @@ h1 .line {
   border-radius: 12px;
   font-weight: 900;
   cursor: pointer;
-  transition: 0.3s;
+  transition: transform 160ms ease-out, background 160ms ease-out;
 }
 
-.btn-ask-ai:hover { transform: scale(1.05); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-ask-ai:hover { transform: scale(1.05); }
+}
+
+.btn-ask-ai:active { transform: scale(0.95); }
 
 .ai-response-box {
   padding: 28px;
@@ -2083,5 +2144,74 @@ h1 .line {
 @media (max-width: 480px) {
   .ai-search-cta { flex-direction: column; gap: 20px; text-align: center; }
   .btn-ask-ai { width: 100%; }
+}
+
+/* ─── Growing 3D Plant Section ─── */
+.growing-section {
+  padding: 100px 0;
+  position: relative;
+}
+
+.growing-3d-wrapper {
+  width: 100%;
+  overflow: hidden;
+  margin-bottom: 32px;
+  min-height: 500px;
+}
+
+.growing-controls {
+  max-width: 600px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.growing-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: linear-gradient(90deg, var(--primary-deep), var(--primary), var(--accent));
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.growing-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  box-shadow: 0 0 20px var(--primary-glow);
+  border: 2px solid var(--bg-dark);
+}
+
+.growing-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  box-shadow: 0 0 20px var(--primary-glow);
+  border: 2px solid var(--bg-dark);
+}
+
+.growing-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+@media (max-width: 768px) {
+  .growing-section { padding: 60px 0; }
+  .growing-3d-wrapper { min-height: 350px; }
+  .growing-labels { font-size: 0.65rem; }
 }
 </style>

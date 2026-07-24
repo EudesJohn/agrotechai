@@ -2,7 +2,6 @@ django
 djangorestframework
 django-cors-headers
 python-dotenv
-google-generativeai
 gunicorn
 whitenoise
 requests
@@ -10,3 +9,13 @@ psycopg2-binary
 dj-database-url
 PyJWT>=2.8.0
 mangum
+
+# Moteur IA Agrotech — deps legeres (fonctionne partout)
+numpy
+scikit-learn
+Pillow>=10.0.0
+wikipedia-api
+
+# Deps optionnelles (ralentissent le cold start Vercel)
+# opencv-python-headless  # ← debloquer pour l'analyse d'images avancee
+# scikit-image              # ← debloquer pour la texture GLCM

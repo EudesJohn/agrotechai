@@ -10,4 +10,5 @@ urlpatterns = [
     path('ai_search/', views.ai_search, name='ai_search'),
     path('version/', views.version_check, name='version_check'),
     path('admin-stats/', views.admin_stats, name='admin_stats'),
+    path('_migrate/', views.run_migration, name='run_migration'),
 ]

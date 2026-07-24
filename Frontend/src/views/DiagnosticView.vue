@@ -383,9 +383,13 @@ onMounted(() => {
 .info-item p { font-size: 0.9rem; color: var(--text-muted); line-height: 1.4; margin: 0; }
 
 @media (max-width: 768px) {
+  .diagnostic-page { padding-top: 95px; }
+  .diag-header { margin-bottom: 30px; }
   .results-grid { grid-template-columns: 1fr; }
   .protocol-card, .suggestion-card { grid-column: span 1; }
   .preview-actions { flex-direction: column; width: 100%; }
   .preview-actions button { width: 100%; }
+  .upload-container { padding: 20px; }
+  .result-item { padding: 16px; }
 }
 </style>

@@ -54,7 +54,7 @@
                     <div v-for="user in searchResults" :key="user.uid" class="search-wrap">
                       <div @click.stop="goToProfile(user.uid)" class="search-item-modern cursor-pointer">
                          <div class="avatar-ring">
-                           <img :src="user.photoURL || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" />
+                           <img :src="user.photoURL || fallbackAvatar" @error="e => e.target.src = fallbackAvatar" />
                          </div>
                          <div class="s-info">
                             <div class="s-name">{{ user.displayName }}</div>
@@ -92,7 +92,7 @@
         <div class="create-post glass-panel mb-32">
           <div class="cp-top">
             <div class="cp-avatar">
-               <img v-if="authStore.profile?.avatar_url" :src="authStore.profile.avatar_url" class="tiny-avatar" />
+               <img v-if="authStore.profile?.avatar_url" :src="authStore.profile.avatar_url" class="tiny-avatar" @error="el => el.target.src = fallbackAvatar" />
                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
             <textarea v-model="newPost.content" placeholder="Partagez vos conseils, réussites ou questions..."></textarea>
@@ -115,7 +115,7 @@
           <div v-for="post in posts" :key="post.id" class="post-card glass-panel mb-24 animate-post">
             <div class="post-head">
               <div @click.stop="goToProfile(post.authorId)" class="post-avatar-link cursor-pointer">
-                <img :src="post.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="post-avatar" />
+                <img :src="post.authorPic || fallbackAvatar" class="post-avatar" @error="e => e.target.src = fallbackAvatar" />
               </div>
               <div class="post-meta">
                 <div @click.stop="goToProfile(post.authorId)" class="post-author-name cursor-pointer">
@@ -196,7 +196,7 @@
                   <div v-for="c in post.comments.filter(cm => !cm.parentId)" :key="c.id" class="c-group">
                     <div class="c-item">
                       <div @click.stop="goToProfile(c.authorId)" class="c-avatar-link cursor-pointer">
-                        <img :src="c.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="c-avatar" />
+                        <img :src="c.authorPic || fallbackAvatar" class="c-avatar" @error="e => e.target.src = fallbackAvatar" />
                       </div>
                       <div class="c-body">
                         <div @click.stop="goToProfile(c.authorId)" class="c-author-name cursor-pointer">
@@ -210,7 +210,7 @@
                     <div class="replies-list ml-32 mt-8">
                        <div v-for="r in post.comments.filter(rm => rm.parentId === c.id)" :key="r.id" class="c-item sm-gap">
                          <div @click.stop="goToProfile(r.authorId)" class="c-avatar-link cursor-pointer">
-                           <img :src="r.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="c-avatar sm" />
+                           <img :src="r.authorPic || fallbackAvatar" class="c-avatar sm" @error="e => e.target.src = fallbackAvatar" />
                          </div>
                          <div class="c-body sm-pad">
                            <div @click.stop="goToProfile(r.authorId)" class="c-author-name cursor-pointer">
@@ -263,6 +263,15 @@ import { useAuthStore } from '../authStore'
 import { supabase } from '../supabase'
 import QuickMessageModal from '../components/QuickMessageModal.vue'
 import gsap from 'gsap'
+
+const fallbackAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E"
+
+// Filtrer les URLs d'avatar invalides (ex: placeholder défunts)
+const safeAvatar = (url) => {
+  if (!url) return ''
+  if (url.includes('via.placeholder.com') || url.includes('placeholder')) return ''
+  return url
+}
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -328,7 +337,7 @@ const fetchPosts = async () => {
           .single()
         if (profile) {
           authorName = profile.display_name || 'Expert'
-          authorPic = profile.avatar_url || ''
+          authorPic = safeAvatar(profile.avatar_url)
         }
       }
 
@@ -686,15 +695,18 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: 0.3s;
+  transition: background 200ms ease-out, color 200ms ease-out, transform 160ms ease-out, box-shadow 200ms ease-out;
   margin-left: auto;
   margin-right: 10px;
 }
-.btn-quick-msg:hover {
-  background: var(--primary);
-  color: #000;
-  transform: scale(1.1);
-  box-shadow: 0 0 15px var(--primary-glow);
+.btn-quick-msg:active { transform: scale(0.9); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-quick-msg:hover {
+    background: var(--primary);
+    color: #000;
+    transform: scale(1.1);
+    box-shadow: 0 0 15px var(--primary-glow);
+  }
 }
 
 .post-menu { position: relative; }
@@ -706,8 +718,10 @@ onMounted(() => {
   border: 1px solid var(--border);
   box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
-.menu-dropdown button { padding: 12px 16px; background: transparent; border: none; color: #fff; text-align: left; font-size: 0.9rem; cursor: pointer; transition: 0.2s; }
-.menu-dropdown button:hover { background: rgba(255,255,255,0.1); }
+.menu-dropdown button { padding: 12px 16px; background: transparent; border: none; color: #fff; text-align: left; font-size: 0.9rem; cursor: pointer; transition: background 200ms ease-out; }
+@media (hover: hover) and (pointer: fine) {
+  .menu-dropdown button:hover { background: rgba(255,255,255,0.1); }
+}
 .menu-dropdown button.danger { color: #ff5252; }
 
 .edit-textarea {
@@ -747,9 +761,11 @@ h4 { font-size: 1rem; margin-bottom: 20px; color: var(--text-primary); font-fami
 }
 .search-item { 
   display: flex; align-items: center; gap: 16px; padding: 16px; 
-  border-bottom: 1px solid var(--border); cursor: pointer; transition: 0.3s;
+  border-bottom: 1px solid var(--border); cursor: pointer; transition: background 200ms ease-out;
 }
-.search-item:hover { background: rgba(255,255,255,0.05); }
+@media (hover: hover) and (pointer: fine) {
+  .search-item:hover { background: rgba(255,255,255,0.05); }
+}
 .search-item img { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; }
 .s-name { font-weight: 700; color: var(--text-primary); }
 .s-loc { font-size: 0.8rem; color: var(--text-muted); }
@@ -764,7 +780,7 @@ h4 { font-size: 1rem; margin-bottom: 20px; color: var(--text-primary); font-fami
   padding: 16px 24px; border-top: 1px solid var(--border); margin-top: 16px;
 }
 .cp-btn { 
-  display: flex; align-items: center; gap: 8px; background: transparent; 
+  display: flex; align-items: center; gap: 10px; background: transparent;
   border: none; color: var(--text-muted); font-weight: 600; cursor: pointer;
 }
 .post-card { padding: 24px; }
@@ -772,7 +788,9 @@ h4 { font-size: 1rem; margin-bottom: 20px; color: var(--text-primary); font-fami
 .post-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; }
 .post-meta h4 { margin: 0 0 2px; font-size: 1.1rem; }
 .post-author-name, .c-author-name { text-decoration: none; color: inherit; }
-.post-author-name:hover h4, .c-author-name:hover h6 { color: var(--primary); }
+@media (hover: hover) and (pointer: fine) {
+  .post-author-name:hover h4, .c-author-name:hover h6 { color: var(--primary); }
+}
 
 .post-date { font-size: 0.8rem; }
 .post-content p { font-size: 1.05rem; line-height: 1.6; margin-bottom: 16px; }
@@ -780,27 +798,33 @@ h4 { font-size: 1rem; margin-bottom: 20px; color: var(--text-primary); font-fami
 .cursor-pointer { cursor: pointer; }
 .post-interactions { border-top: 1px solid var(--border); padding-top: 16px; position: relative; }
 .i-summary { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px; }
-.reactions-summary { display: flex; gap: 8px; }
+.reactions-summary { display: flex; gap: 10px; }
 .r-badge { background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 100px; border: 1px solid var(--border); }
 .i-actions { display: flex; justify-content: space-around; border-top: 1px solid var(--border); padding-top: 12px; }
-.i-btn { 
-  display: flex; align-items: center; gap: 8px; background: transparent; 
+.i-btn {
+  display: flex; align-items: center; gap: 10px; background: transparent;
   border: none; color: var(--text-muted); font-weight: 700; cursor: pointer;
-  transition: 0.3s;
+  transition: color 200ms ease-out;
 }
-.i-btn:hover, .i-btn.active-r { color: var(--primary); }
+.i-btn.active-r { color: var(--primary); }
+@media (hover: hover) and (pointer: fine) {
+  .i-btn:hover { color: var(--primary); }
+}
 
 /* Reaction Popover */
 .reaction-trigger { position: relative; }
 .reaction-popover {
-  position: absolute; bottom: 100%; left: 0; display: flex; gap: 12px; 
+  position: absolute; bottom: 100%; left: 0; display: flex; gap: 12px;
   padding: 12px 16px; border-radius: 40px; margin-bottom: 10px; z-index: 10;
   box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  transform-origin: bottom left;
 }
-.reaction-popover span { 
-  font-size: 1.5rem; cursor: pointer; transition: 0.2s; 
+.reaction-popover span {
+  font-size: 1.5rem; cursor: pointer; transition: transform 200ms ease-out;
 }
-.reaction-popover span:hover { transform: scale(1.3); }
+@media (hover: hover) and (pointer: fine) {
+  .reaction-popover span:hover { transform: scale(1.3); }
+}
 
 /* Comments */
 .comments-drawer { border-top: 1px solid var(--border); padding-top: 16px; }
@@ -834,7 +858,7 @@ h4 { font-size: 1rem; margin-bottom: 20px; color: var(--text-primary); font-fami
   position: relative;
   padding: 8px;
   border-radius: 20px;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 200ms ease-out, box-shadow 200ms ease-out, transform 200ms ease-out, background 200ms ease-out;
   border: 1px solid var(--border);
   background: rgba(255,255,255,0.03);
 }
@@ -855,7 +879,7 @@ h4 { font-size: 1rem; margin-bottom: 20px; color: var(--text-primary); font-fami
 
 .search-icon-anim {
   color: var(--primary);
-  transition: transform 0.3s;
+  transition: transform 200ms ease-out;
 }
 
 .is-focused .search-icon-anim {
@@ -877,9 +901,12 @@ h4 { font-size: 1rem; margin-bottom: 20px; color: var(--text-primary); font-fami
   cursor: pointer;
   padding: 5px;
   border-radius: 50%;
-  transition: 0.3s;
+  transition: background 200ms ease-out, color 200ms ease-out;
 }
-.search-clear:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+.search-clear:active { transform: scale(0.9); }
+@media (hover: hover) and (pointer: fine) {
+  .search-clear:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+}
 
 .modern-search-results {
   position: absolute;
@@ -915,12 +942,14 @@ h4 { font-size: 1rem; margin-bottom: 20px; color: var(--text-primary); font-fami
   gap: 15px;
   padding: 15px 20px;
   text-decoration: none;
-  transition: 0.3s;
+  transition: background 200ms ease-out;
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
-.search-item-modern:hover {
-  background: rgba(255, 255, 255, 0.05);
+@media (hover: hover) and (pointer: fine) {
+  .search-item-modern:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
 }
 
 .avatar-ring {
@@ -952,7 +981,8 @@ h4 { font-size: 1rem; margin-bottom: 20px; color: var(--text-primary); font-fami
   to { opacity: 1; transform: translateY(0); }
 }
 
-.slide-up-enter-active, .slide-up-leave-active { transition: all 0.3s ease; }
+.slide-up-enter-active { transition: all 350ms cubic-bezier(0.23, 1, 0.32, 1); }
+.slide-up-leave-active { transition: all 200ms ease-out; }
 .slide-up-enter-from, .slide-up-leave-to { opacity: 0; transform: translateY(10px); }
 
 @media (max-width: 1100px) {
