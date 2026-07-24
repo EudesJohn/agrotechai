@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -56,18 +57,21 @@ REST_FRAMEWORK = {
 
 # CORS — domaines autorisés uniquement
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = [
-    'https://agrotech-ai-ff555.web.app',
-    'https://agrotech-ai-ff555.firebaseapp.com',
-    'https://agrotech-kc6o.onrender.com',
-    'http://localhost:5173',
-    'http://localhost:5174',
-]
+CORS_ALLOWED_ORIGINS_ENV = os.getenv('CORS_ALLOWED_ORIGINS')
+if CORS_ALLOWED_ORIGINS_ENV:
+    CORS_ALLOWED_ORIGINS = CORS_ALLOWED_ORIGINS_ENV.split(',')
+else:
+    CORS_ALLOWED_ORIGINS = [
+        'https://agrotech-ai-ff555.web.app',
+        'https://agrotech-ai-ff555.firebaseapp.com',
+        'https://agrotech-kc6o.onrender.com',
+        'http://localhost:5173',
+        'http://localhost:5174',
+    ]
 CORS_ALLOW_CREDENTIALS = True
 
 # Load .env
 from dotenv import load_dotenv
-import os
 load_dotenv(BASE_DIR / '.env')
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
@@ -90,11 +94,16 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'agrotech-kc6o.onrender.com,localhost').split(',')
 
-CSRF_TRUSTED_ORIGINS = [
-    'https://*.onrender.com',
-    'https://agrotech-ai-ff555.web.app',
-    'https://agrotech-ai-ff555.firebaseapp.com',
-]
+CSRF_TRUSTED_ORIGINS_ENV = os.getenv('CSRF_TRUSTED_ORIGINS')
+if CSRF_TRUSTED_ORIGINS_ENV:
+    CSRF_TRUSTED_ORIGINS = CSRF_TRUSTED_ORIGINS_ENV.split(',')
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://*.onrender.com',
+        'https://*.vercel.app',
+        'https://agrotech-ai-ff555.web.app',
+        'https://agrotech-ai-ff555.firebaseapp.com',
+    ]
 
 # Increase max upload size for base64 images
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760 # 10MB

@@ -9,3 +9,5 @@ staticfiles/
 .DS_Store
 *.log
 .secrets
+
+.vercel

@@ -72,11 +72,13 @@ const loadFromAuthStore = () => {
   if (authStore.profile) {
     // Adapter les données de base pour le formulaire
     const p = authStore.profile
+    const fullName = p.display_name || ''
+    const nameParts = fullName.split(' ')
     profile.value = {
       ...p,
-      user: { 
-        first_name: p.firstName || p.displayName?.split(' ')[0] || '', 
-        last_name: p.lastName || p.displayName?.split(' ')[1] || '',
+      user: {
+        first_name: nameParts[0] || '',
+        last_name: nameParts.slice(1).join(' ') || '',
         email: p.email || authStore.user?.email || ''
       }
     }
@@ -93,13 +95,13 @@ const saveProfile = async () => {
   saving.value = true
   message.value = { text: '', type: '' }
   try {
+    // Construire le display_name à partir du prénom + nom
+    const displayName = `${profile.value.user.first_name} ${profile.value.user.last_name}`.trim()
     const updateData = {
       ...profile.value,
-      displayName: `${profile.value.user.first_name} ${profile.value.user.last_name}`.trim(),
-      firstName: profile.value.user.first_name,
-      lastName: profile.value.user.last_name
+      display_name: displayName,
     }
-    // Supprimer le champ 'user' imbriqué pour Firestore si on veut rester à plat
+    // Supprimer les champs qui ne sont pas dans la table profiles
     delete updateData.user
     
     await authStore.updateProfile(updateData)
