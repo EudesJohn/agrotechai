@@ -624,7 +624,7 @@ onMounted(() => {
         <div v-for="post in recentPosts" :key="post.id" class="home-post-card glass-panel">
           <div class="hp-head">
             <RouterLink :to="'/profile/' + post.authorId" class="hp-avatar-link">
-              <img :src="post.authorPic || 'https://via.placeholder.com/40'" class="hp-avatar" />
+              <img :src="post.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="hp-avatar" />
             </RouterLink>
             <div class="hp-meta">
               <RouterLink :to="'/profile/' + post.authorId" class="hp-author-name">
@@ -673,7 +673,7 @@ onMounted(() => {
                   <div v-for="c in post.comments.filter(cm => !cm.parentId)" :key="c.id" class="c-group-mini">
                     <div class="c-item-mini">
                       <RouterLink :to="'/profile/' + c.authorId" class="c-avatar-link">
-                        <img :src="c.authorPic || 'https://via.placeholder.com/25'" class="c-avatar-mini" />
+                        <img :src="c.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="c-avatar-mini" />
                       </RouterLink>
                       <div class="c-body-mini">
                         <RouterLink :to="'/profile/' + c.authorId" class="c-author-name">

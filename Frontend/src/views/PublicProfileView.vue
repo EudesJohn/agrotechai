@@ -286,7 +286,7 @@ onMounted(() => {
           <div v-if="socialListLoading" class="mini-spinner"></div>
           <div v-else-if="socialList.length > 0" class="social-user-list">
             <div v-for="user in socialList" :key="user.uid" class="social-user-card" @click="() => { showSocialModal = false; router.push('/profile/' + user.uid); }">
-              <img :src="user.photoURL || 'https://via.placeholder.com/40'" class="social-avatar" />
+              <img :src="user.photoURL || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="social-avatar" />
               <div class="social-info">
                 <span class="social-name">{{ user.displayName }}</span>
                 <span class="social-type">{{ user.user_type }}</span>

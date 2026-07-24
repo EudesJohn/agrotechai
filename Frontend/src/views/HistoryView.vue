@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { supabase } from '../supabase'
 import { useAuthStore } from '../authStore'
 import gsap from 'gsap'
@@ -40,14 +40,17 @@ const fetchHistory = async () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (authStore.user) {
-    fetchHistory()
+    await fetchHistory()
   } else {
     loading.value = false
   }
-  gsap.from(".history-title", { y: -30, opacity: 0, duration: 1, ease: "power3.out" })
-  gsap.from(".prod-card", {
+  await nextTick()
+  const titleEl = document.querySelector(".history-title")
+  if (titleEl) gsap.from(titleEl, { y: -30, opacity: 0, duration: 1, ease: "power3.out" })
+  const cards = document.querySelectorAll(".prod-card")
+  if (cards.length > 0) gsap.from(cards, {
     y: 50, opacity: 0, duration: 0.8, stagger: 0.1, delay: 0.3, ease: "back.out(1.4)"
   })
 })
@@ -78,7 +81,7 @@ onMounted(() => {
          </div>
       </div>
 
-      <div v-else-if="!auth.currentUser" class="history-empty">
+      <div v-else-if="!authStore.user" class="history-empty">
         <div class="empty-icon">
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         </div>

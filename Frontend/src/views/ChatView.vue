@@ -25,6 +25,8 @@ const isProcessingPrefill = ref(false)
 let chatsChannel = null
 let msgChannel = null
 
+const PLACEHOLDER_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E"
+
 const buildChatListFromData = async (chatData) => {
   const chatList = []
   for (const chat of chatData) {
@@ -36,15 +38,15 @@ const buildChatListFromData = async (chatData) => {
         .select('*')
         .eq('id', partnerId)
         .single()
-      partnerInfo = pData || { displayName: 'Utilisateur Inconnu' }
+      partnerInfo = pData || { display_name: 'Utilisateur Inconnu' }
     }
     chatList.push({
       id: chat.id,
       ...chat,
       partnerId,
-      partnerName: partnerInfo.displayName,
-      partnerPic: partnerInfo.photoURL,
-      isOnline: partnerInfo.isOnline || false,
+      partnerName: partnerInfo.display_name,
+      partnerPic: partnerInfo.avatar_url,
+      isOnline: partnerInfo.is_online || false,
       lastUpdate: chat.last_message_at,
       lastMessage: chat.last_message
     })
@@ -114,19 +116,34 @@ const loadChats = async () => {
 
 const startChatWith = async (partnerId) => {
   const participants = [authStore.user.id, partnerId].sort()
-  const chatId = participants.join('_')
 
-  // Check if chat exists
+  // Check if chat exists by participants array
   const { data: existingChat } = await supabase
     .from('chats')
-    .select('*')
-    .eq('id', chatId)
-    .single()
+    .select('id')
+    .contains('participants', participants)
+    .maybeSingle()
 
-  if (!existingChat) {
+  let chatId
+  if (existingChat) {
+    chatId = existingChat.id
+  } else {
+    // Create chat in Supabase (UUID auto-generated)
+    const { data: newChat, error: createError } = await supabase
+      .from('chats')
+      .insert({ participants })
+      .select('id')
+      .single()
+
+    if (createError) {
+      console.error("Chat creation error:", createError)
+      return
+    }
+    chatId = newChat.id
+
     const { data: pData } = await supabase
       .from('profiles')
-      .select('*')
+      .select('display_name, avatar_url')
       .eq('id', partnerId)
       .single()
     const profile = pData || {}
@@ -135,8 +152,8 @@ const startChatWith = async (partnerId) => {
       chats.value.unshift({
         id: chatId,
         partnerId,
-        partnerName: profile.displayName || 'Nouvel Ami',
-        partnerPic: profile.photoURL,
+        partnerName: profile.display_name || 'Nouvel Ami',
+        partnerPic: profile.avatar_url,
         lastMessage: 'Démarrer la conversation...',
         lastUpdate: new Date().toISOString()
       })
@@ -158,7 +175,7 @@ const selectChat = async (chatId, partnerId) => {
     .select('*')
     .eq('id', partnerId)
     .single()
-  chatPartner.value = pData || { displayName: 'Utilisateur' }
+  chatPartner.value = pData || { display_name: 'Utilisateur' }
 
   // Fetch initial messages
   const { data: msgData } = await supabase
@@ -205,16 +222,7 @@ const sendMessage = async () => {
   try {
     const participants = [authStore.user.id, chatPartner.value.id].sort()
 
-    // Upsert chat doc
-    await supabase.from('chats').upsert({
-      id: chatId,
-      participants,
-      last_message: msg,
-      last_message_at: new Date().toISOString(),
-      last_message_sender_id: authStore.user.id
-    })
-
-    // Insert message
+    // Insert message (trigger updates chats.last_message automatically)
     await supabase.from('chat_messages').insert({
       chat_id: chatId,
       sender_id: authStore.user.id,
@@ -291,7 +299,7 @@ const backToList = () => {
                  :class="['chat-item', { active: activeChatId === chat.id }]"
                  @click="selectChat(chat.id, chat.partnerId)">
               <div class="item-avatar">
-                <img :src="chat.partnerPic || 'https://via.placeholder.com/50'" />
+                <img :src="chat.partnerPic || PLACEHOLDER_AVATAR" />
                 <span v-if="chat.isOnline" class="online-indicator"></span>
               </div>
               <div class="item-info">
@@ -313,9 +321,9 @@ const backToList = () => {
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
               </button>
               <div class="header-user" @click="router.push('/profile/' + chatPartner.id)">
-                <img :src="chatPartner.photoURL || 'https://via.placeholder.com/40'" class="h-avatar" />
+                <img :src="chatPartner.avatar_url || '/avatar-placeholder.svg'" class="h-avatar" />
                 <div class="h-info">
-                  <h3>{{ chatPartner.displayName }}</h3>
+                  <h3>{{ chatPartner.display_name || 'Utilisateur' }}</h3>
                   <span class="h-status">En ligne</span>
                 </div>
               </div>
@@ -324,13 +332,13 @@ const backToList = () => {
             <div class="messages-viewport" ref="scrollContainer">
                <div v-for="m in messages" :key="m.id" 
                     :class="['msg-line', m.senderId === authStore.user?.id ? 'mine' : 'theirs']">
-                  <img v-if="m.senderId !== authStore.user?.id" :src="chatPartner.photoURL || 'https://via.placeholder.com/30'" class="msg-mini-avatar" />
+                  <img v-if="m.senderId !== authStore.user?.id" :src="chatPartner.avatar_url || PLACEHOLDER_AVATAR" class="msg-mini-avatar" />
                   <div class="msg-bubble" :title="m.createdAt ? new Date(m.createdAt).toLocaleString() : ''">
                     {{ m.text }}
                   </div>
                </div>
                <div v-if="messages.length === 0" class="chat-start">
-                 Dites bonjour à {{ chatPartner.displayName }} !
+                 Dites bonjour à {{ chatPartner.display_name || chatPartner.displayName || 'votre contact' }} !
                </div>
             </div>
 

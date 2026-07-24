@@ -15,23 +15,36 @@ const authStore = useAuthStore()
 const message = ref('')
 const loading = ref(false)
 
+const PLACEHOLDER_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E"
+
 const handleSend = async () => {
   if (!message.value.trim() || !props.partnerId || !authStore.user) return
-  
+
   loading.value = true
   try {
     const participants = [authStore.user.id, props.partnerId].sort()
-    const chatId = participants.join('_')
 
-    // 1. Update/Create Chat Doc
-    await supabase.from('chats').upsert({
-      id: chatId,
-      participants,
-      last_message: message.value,
-      last_message_sender_id: authStore.user.id,
-    })
+    // Create or find existing chat by participants
+    const { data: existingChat } = await supabase
+      .from('chats')
+      .select('id')
+      .contains('participants', participants)
+      .maybeSingle()
 
-    // 2. Add Message to chat_messages table
+    let chatId
+    if (existingChat) {
+      chatId = existingChat.id
+    } else {
+      const { data: newChat, error: createError } = await supabase
+        .from('chats')
+        .insert({ participants })
+        .select('id')
+        .single()
+      if (createError) throw createError
+      chatId = newChat.id
+    }
+
+    // Insert message (trigger updates chat last_message)
     await supabase.from('chat_messages').insert({
       chat_id: chatId,
       sender_id: authStore.user.id,
@@ -57,7 +70,7 @@ const handleSend = async () => {
       <div class="modal-content glass-panel animate-pop">
         <div class="modal-header">
           <div class="user-info">
-            <img :src="partnerPic || 'https://via.placeholder.com/40'" class="avatar" />
+            <img :src="partnerPic || PLACEHOLDER_AVATAR" class="avatar" />
             <div>
               <h3>Message à {{ partnerName }}</h3>
               <span class="status">Expert Agrotech</span>

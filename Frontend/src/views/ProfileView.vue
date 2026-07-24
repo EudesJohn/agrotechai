@@ -224,7 +224,7 @@ onMounted(() => {
         <div class="avatar-wrapper">
           <div class="avatar-glow"></div>
           <div class="avatar-circle">
-            <img v-if="authStore.profile?.photoURL" :src="authStore.profile.photoURL" class="profile-img-preview" />
+            <img v-if="authStore.profile?.avatar_url" :src="authStore.profile.avatar_url" class="profile-img-preview" />
             <template v-else>
               <svg v-if="!profile.user.first_name" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               <span v-else>{{ profile.user.first_name[0] }}{{ profile.user.last_name[0] }}</span>
@@ -245,11 +245,11 @@ onMounted(() => {
 
         <div class="hero-stats">
           <div class="h-stat clickable-stat" @click="openSocialModal('followers')">
-            <span class="h-val">{{ authStore.profile?.followersCount || 0 }}</span>
+            <span class="h-val">{{ authStore.profile?.followers_count || 0 }}</span>
             <span class="h-lbl">Abonnés</span>
           </div>
           <div class="h-stat clickable-stat" @click="openSocialModal('following')">
-            <span class="h-val">{{ authStore.profile?.followingCount || 0 }}</span>
+            <span class="h-val">{{ authStore.profile?.following_count || 0 }}</span>
             <span class="h-lbl">Suivis</span>
           </div>
         </div>
@@ -386,7 +386,7 @@ onMounted(() => {
           <div v-if="socialListLoading" class="mini-spinner"></div>
           <div v-else-if="socialList.length > 0" class="social-user-list">
             <div v-for="user in socialList" :key="user.uid" class="social-user-card" @click="() => { showSocialModal = false; router.push('/profile/' + user.uid); }">
-              <img :src="user.photoURL || 'https://via.placeholder.com/40'" class="social-avatar" />
+              <img :src="user.photoURL || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="social-avatar" />
               <div class="social-info">
                 <span class="social-name">{{ user.displayName }}</span>
                 <span class="social-type">{{ user.user_type }}</span>

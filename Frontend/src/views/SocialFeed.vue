@@ -6,14 +6,14 @@
         <div class="mini-profile glass-panel" @click="router.push('/profile')" style="cursor: pointer">
           <div class="p-cover"></div>
           <div class="p-avatar">
-             <img v-if="authStore.profile?.photoURL" :src="authStore.profile.photoURL" />
+             <img v-if="authStore.profile?.avatar_url" :src="authStore.profile.avatar_url" />
              <svg v-else width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           </div>
-          <h3>{{ authStore.profile?.displayName || 'Expert Agrotech' }}</h3>
+          <h3>{{ authStore.profile?.display_name || authStore.user?.displayName || 'Expert Agrotech' }}</h3>
           <p class="p-bio">{{ authStore.profile?.bio || "Passionné par l'innovation agricole." }}</p>
           <div class="p-stats">
-            <div class="s-item"><span>{{ authStore.profile?.followersCount || 0 }}</span> abonnés</div>
-            <div class="s-item"><span>{{ authStore.profile?.followingCount || 0 }}</span> suivi(s)</div>
+            <div class="s-item"><span>{{ authStore.profile?.followers_count || 0 }}</span> abonnés</div>
+            <div class="s-item"><span>{{ authStore.profile?.following_count || 0 }}</span> suivi(s)</div>
           </div>
         </div>
 
@@ -54,7 +54,7 @@
                     <div v-for="user in searchResults" :key="user.uid" class="search-wrap">
                       <div @click.stop="goToProfile(user.uid)" class="search-item-modern cursor-pointer">
                          <div class="avatar-ring">
-                           <img :src="user.photoURL || 'https://via.placeholder.com/40'" />
+                           <img :src="user.photoURL || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" />
                          </div>
                          <div class="s-info">
                             <div class="s-name">{{ user.displayName }}</div>
@@ -92,7 +92,7 @@
         <div class="create-post glass-panel mb-32">
           <div class="cp-top">
             <div class="cp-avatar">
-               <img v-if="authStore.profile?.photoURL" :src="authStore.profile.photoURL" class="tiny-avatar" />
+               <img v-if="authStore.profile?.avatar_url" :src="authStore.profile.avatar_url" class="tiny-avatar" />
                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
             <textarea v-model="newPost.content" placeholder="Partagez vos conseils, réussites ou questions..."></textarea>
@@ -115,7 +115,7 @@
           <div v-for="post in posts" :key="post.id" class="post-card glass-panel mb-24 animate-post">
             <div class="post-head">
               <div @click.stop="goToProfile(post.authorId)" class="post-avatar-link cursor-pointer">
-                <img :src="post.authorPic || 'https://via.placeholder.com/50'" class="post-avatar" />
+                <img :src="post.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="post-avatar" />
               </div>
               <div class="post-meta">
                 <div @click.stop="goToProfile(post.authorId)" class="post-author-name cursor-pointer">
@@ -196,7 +196,7 @@
                   <div v-for="c in post.comments.filter(cm => !cm.parentId)" :key="c.id" class="c-group">
                     <div class="c-item">
                       <div @click.stop="goToProfile(c.authorId)" class="c-avatar-link cursor-pointer">
-                        <img :src="c.authorPic || 'https://via.placeholder.com/30'" class="c-avatar" />
+                        <img :src="c.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="c-avatar" />
                       </div>
                       <div class="c-body">
                         <div @click.stop="goToProfile(c.authorId)" class="c-author-name cursor-pointer">
@@ -210,7 +210,7 @@
                     <div class="replies-list ml-32 mt-8">
                        <div v-for="r in post.comments.filter(rm => rm.parentId === c.id)" :key="r.id" class="c-item sm-gap">
                          <div @click.stop="goToProfile(r.authorId)" class="c-avatar-link cursor-pointer">
-                           <img :src="r.authorPic || 'https://via.placeholder.com/25'" class="c-avatar sm" />
+                           <img :src="r.authorPic || 'data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Crect width='50' height='50' fill='%232a2a2a'/%3E%3Ccircle cx='25' cy='17' r='9' fill='%23555'/%3E%3Cpath d='M7 45a18 18 0 0 1 36 0' fill='%23555'/%3E%3C/svg%3E'" class="c-avatar sm" />
                          </div>
                          <div class="c-body sm-pad">
                            <div @click.stop="goToProfile(r.authorId)" class="c-author-name cursor-pointer">
@@ -370,8 +370,9 @@ const fetchPosts = async () => {
     }))
 
     setTimeout(() => {
-      gsap.from(".animate-post", { y: 20, opacity: 0, duration: 0.8, stagger: 0.1, ease: "power2.out" })
-    }, 100)
+      const els = document.querySelectorAll(".animate-post")
+      if (els.length > 0) gsap.from(els, { y: 20, opacity: 0, duration: 0.8, stagger: 0.1, ease: "power2.out" })
+    }, 200)
   } catch (err) {
     console.error("Erreur Supabase Posts", err)
   } finally {
@@ -543,8 +544,8 @@ const addComment = async (postId) => {
       post.comments.push({
         id: newComment.id,
         authorId: newComment.user_id,
-        authorName: authStore.profile?.displayName || 'Expert',
-        authorPic: authStore.profile?.photoURL || '',
+        authorName: authStore.profile?.display_name || authStore.profile?.displayName || 'Expert',
+        authorPic: authStore.profile?.avatar_url || authStore.profile?.avatar_url || '',
         content: newComment.content,
         parentId: newComment.parent_id,
         createdAt: newComment.created_at
