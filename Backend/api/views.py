@@ -264,3 +264,35 @@ def run_migration(request):
         return Response({"status": "ok", "output": output})
     except Exception as e:
         return Response({"status": "error", "error": str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def build_knowledge_base(request):
+    """Construit la base de connaissances Wikipedia via l'API."""
+    secret = request.data.get('secret', '')
+    if secret != os.environ.get('MIGRATE_SECRET', ''):
+        return Response({"error": "Unauthorized"}, status=403)
+
+    command = request.data.get('command', '--all')
+    lang = request.data.get('lang', 'fr')
+
+    from django.core.management import call_command
+    from io import StringIO
+    out = StringIO()
+    try:
+        args = [command]
+        if command == '--all':
+            args = ['--all']
+        elif command == '--stats':
+            args = ['--stats']
+        elif command.startswith('--query='):
+            args = ['--query', command.split('=', 1)[1]]
+        else:
+            args = ['--all']
+
+        call_command('build_knowledge_base', *args, lang=lang, stdout=out, stderr=out)
+        output = out.getvalue()
+        return Response({"status": "ok", "output": output})
+    except Exception as e:
+        return Response({"status": "error", "error": str(e)}, status=500)
