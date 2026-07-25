@@ -84,7 +84,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # ──────────────────── Wikipedia scraper ────────────────────
 
 class WikipediaScraper:
-    """Scraper Wikipedia pour le contenu agricole (zerf dependance lourde)."""
+    """Scraper Wikipedia pour le contenu agricole (zero dependance lourde)."""
 
     AGRI_TOPICS = [
         "plante medicinale", "agriculture", "culture", "maladie des plantes",
@@ -105,9 +105,59 @@ class WikipediaScraper:
         "patate douce", "taro", "fonio",
     ]
 
+    # Mots interrogatifs et verbes a ignorer dans les requetes
+    STOPWORDS_FR = {
+        'comment', 'pourquoi', 'quel', 'quelle', 'quels', 'quelles',
+        'est', 'ce', 'que', 'qui', 'ou', 'dans', 'avec', 'pour',
+        'sur', 'les', 'des', 'une', 'mon', 'ton', 'son', 'ma', 'ta', 'sa',
+        'je', 'tu', 'il', 'elle', 'nous', 'vous', 'ils', 'elles',
+        'au', 'aux', 'du', 'de', 'la', 'le', 'et', 'en', 'par',
+        'pas', 'plus', 'tres', 'peu', 'beaucoup',
+        'comment', 'faire', 'cultiver', 'planter', 'traiter', 'soigner',
+        'recolter', 'arroser', 'fertiliser', 'nourrir',
+        'peut', 'peux', 'veux', 'veut', 'vais', 'va', 'vas', 'vont',
+        'donne', 'donner', 'avoir', 'etre', 'sont', 'suis',
+    }
+
     def __init__(self, lang='fr'):
         self.lang = lang
         self._api = None
+
+    def _clean_query(self, query):
+        """Extrait les mots-cles pertinents d'une question agricole."""
+        words = query.lower().split()
+        keywords = [w for w in words if w not in self.STOPWORDS_FR and len(w) > 2]
+        # Si pas assez de mots-cles, garder les plus longs
+        if len(keywords) < 2:
+            keywords = sorted(words, key=len, reverse=True)[:3]
+        return keywords
+
+    def _try_queries(self, query):
+        """Genere plusieurs formulations de recherche."""
+        keywords = self._clean_query(query)
+
+        queries = []
+        # 1. La requete originale
+        queries.append(query)
+
+        # 2. Mots-cles joins
+        if keywords:
+            queries.append(' '.join(keywords))
+
+        # 3. Chercher specifiquement le premier mot-cle (souvent le sujet principal)
+        if keywords:
+            queries.append(f"{keywords[0]} plante culture")
+            if len(keywords) > 1:
+                queries.append(f"{keywords[0]} {keywords[1]}")
+
+        # Deduplicater
+        seen = set()
+        unique = []
+        for q in queries:
+            if q not in seen:
+                seen.add(q)
+                unique.append(q)
+        return unique
 
     @property
     def api(self):
@@ -129,21 +179,37 @@ class WikipediaScraper:
             import wikipedia
             try:
                 wikipedia.set_lang(self.lang)
-                titles = wikipedia.search(query, results=results)
+                seen_titles = set()
                 entries = []
-                for title in titles:
+
+                # Essayer plusieurs formulations
+                search_queries = self._try_queries(query)
+
+                for search_q in search_queries:
+                    if len(entries) >= results:
+                        break
                     try:
-                        summary = wikipedia.summary(title, sentences=3)
-                        page = wikipedia.page(title)
-                        entries.append({
-                            'title': title,
-                            'summary': summary,
-                            'url': page.url,
-                            'content': page.content,
-                            'categories': [c for c in page.categories if 'Categorie' not in c],
-                        })
+                        titles = wikipedia.search(search_q, results=results)
                     except Exception:
                         continue
+
+                    for title in titles:
+                        if title in seen_titles or len(entries) >= results:
+                            continue
+                        seen_titles.add(title)
+                        try:
+                            summary = wikipedia.summary(title, sentences=3)
+                            page = wikipedia.page(title)
+                            entries.append({
+                                'title': title,
+                                'summary': summary,
+                                'url': page.url,
+                                'content': page.content,
+                                'categories': [c for c in page.categories if 'Categorie' not in c],
+                            })
+                        except Exception:
+                            continue
+
                 return entries
             except Exception as e:
                 logger.warning(f"Wikipedia search error: {e}")
