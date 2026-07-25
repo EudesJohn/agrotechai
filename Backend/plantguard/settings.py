@@ -65,6 +65,7 @@ else:
         'https://agrotech-ai-ff555.web.app',
         'https://agrotech-ai-ff555.firebaseapp.com',
         'https://agrotech-kc6o.onrender.com',
+        'https://agrotechai-eight.vercel.app',
         'http://localhost:5173',
         'http://localhost:5174',
     ]
@@ -90,7 +91,7 @@ if not SECRET_KEY:
 # Security WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'agrotech-kc6o.onrender.com,localhost').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'agrotech-backend-six.vercel.app,agrotech-kc6o.onrender.com,localhost').split(',')
 
 CSRF_TRUSTED_ORIGINS_ENV = os.getenv('CSRF_TRUSTED_ORIGINS')
 if CSRF_TRUSTED_ORIGINS_ENV:
