@@ -216,6 +216,9 @@ class WikipediaScraper:
         """Requete directe a l'API MediaWiki (evite les bugs du package wikipedia)."""
         import requests as req
 
+        # Extraire les mots-cles pour le filtrage de pertinence
+        clean_keywords = self._clean_query(query)
+
         seen_titles = set()
         entries = []
         search_queries = self._try_queries(query)
@@ -296,6 +299,19 @@ class WikipediaScraper:
                     if full_page_id and full_page_id != '-1':
                         full_content = full_pages[full_page_id].get('extract', '') or ''
 
+                    # Filtre de pertinence : verifier que le contenu est agricole
+                    check_text = (full_content or summary)[:300].lower()
+                    has_title_match = any(
+                        re.search(r'\b' + re.escape(kw.lower()) + r'\b', title.lower())
+                        for kw in clean_keywords
+                    )
+                    is_relevant = (
+                        has_title_match
+                        or self._is_agricultural(check_text, keywords=clean_keywords)
+                    )
+                    if not is_relevant and len(entries) >= 1:
+                        continue
+
                     entries.append({
                         'title': page_info.get('title', title),
                         'summary': summary[:500],
@@ -309,6 +325,33 @@ class WikipediaScraper:
 
         session.close()
         return entries
+
+    def _is_agricultural(self, text, keywords=None):
+        """Verifie si un texte est pertinent pour l'agriculture."""
+        if not text:
+            return False
+        text_lower = text.lower()
+
+        # Verifier si les mots-cles apparaissent comme mots entiers
+        if keywords:
+            for kw in keywords:
+                if re.search(r'\b' + re.escape(kw.lower()) + r'\b', text_lower):
+                    return True
+
+        # Mots-cles agricoles generaux (fallback)
+        AGRI_SIGNALS = {
+            'céréale', 'cereale', 'plante', 'agriculture', 'agricole',
+            'culture', 'cultivé', 'cultive', 'cultiver', 'cultivée',
+            'récolte', 'recolte', 'récolté', 'recolter', 'grain',
+            'graine', 'champ', 'champs', 'plantation', 'sol', 'terre',
+            'engrais', 'irrigation', 'pesticide', 'variété', 'variete',
+            'aliment', 'alimentaire', 'fourrage', 'céréalière',
+            'cerealiere', 'maraîcher', 'maraicher', 'potager',
+            'botanique', 'botany', 'agricultural', 'crop', 'plant',
+            'farming', 'cultivation', 'harvest', 'fertiliser',
+            'maladie', 'ravageur', 'traitement', 'phytopathologie',
+        }
+        return any(signal in text_lower for signal in AGRI_SIGNALS)
 
 
 # ──────────────────── Wikidata scraper ────────────────────
