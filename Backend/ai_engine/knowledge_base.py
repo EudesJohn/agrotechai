@@ -522,6 +522,8 @@ class OpenAlexScraper:
                     pairs.append((pos, word))
             pairs.sort(key=lambda x: x[0])
             return ' '.join(word for _, word in pairs)
+        except Exception:
+            return ''
 
 
 # ──────────────────── Trefle scraper ─────────────────────
@@ -610,8 +612,6 @@ class TrefleScraper:
                 continue
 
         return entries
-        except Exception:
-            return ''
 
 
 # ──────────────────── TF‑IDF Engine (moteur principal) ────────────────────
