@@ -109,7 +109,7 @@ class Command(BaseCommand):
         elapsed = time.time() - start
         stats = kb.get_stats()
 
-        self.stdout.new_line()
+        self.stdout.write('')
         self.stdout.write(self.style.SUCCESS(
             f"\n✅ Importation terminée en {elapsed:.1f}s"
         ))
