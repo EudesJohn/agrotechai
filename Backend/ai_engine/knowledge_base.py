@@ -208,60 +208,106 @@ class WikipediaScraper:
         return None
 
     def search(self, query, results=5):
-        """Recherche des articles Wikipedia (via lib ou HTTP)."""
-        if HAS_WIKIPEDIA:
-            import wikipedia
+        """Recherche des articles Wikipedia via l'API MediaWiki directement."""
+        return self._api_search(query, results)
+
+    def _api_search(self, query, results=5):
+        """Requete directe a l'API MediaWiki (evite les bugs du package wikipedia)."""
+        import requests as req
+
+        seen_titles = set()
+        entries = []
+        search_queries = self._try_queries(query)
+
+        api_base = f"https://{self.lang}.wikipedia.org/w/api.php"
+
+        session = req.Session()
+        session.headers.update({
+            'User-Agent': 'AgrotechAI/1.0 (agriculture bot; contact@agrotech.bj)'
+        })
+
+        for search_q in search_queries:
+            if len(entries) >= results:
+                break
+
+            # 1. Opensearch : recherche de titres
             try:
-                wikipedia.set_lang(self.lang)
-                seen_titles = set()
-                entries = []
+                resp = session.get(api_base, params={
+                    'action': 'opensearch',
+                    'search': search_q,
+                    'limit': results,
+                    'namespace': 0,
+                    'format': 'json',
+                }, timeout=15)
+                resp.raise_for_status()
+                data = resp.json()
+                titles = data[1] if len(data) > 1 else []
+            except Exception as e:
+                logger.warning(f"Wiki opensearch error for '{search_q}': {e}")
+                continue
 
-                # Essayer plusieurs formulations
-                search_queries = self._try_queries(query)
+            if not titles:
+                continue
 
-                for search_q in search_queries:
-                    if len(entries) >= results:
-                        break
-                    try:
-                        titles = wikipedia.search(search_q, results=results)
-                    except Exception:
+            # 2. Pour chaque titre : recuperer le resume + contenu
+            for title in titles:
+                if title in seen_titles or len(entries) >= results:
+                    continue
+                seen_titles.add(title)
+
+                try:
+                    # Resumé + metadata
+                    page_resp = session.get(api_base, params={
+                        'action': 'query',
+                        'titles': title,
+                        'prop': 'extracts|info',
+                        'exintro': 1,
+                        'explaintext': 1,
+                        'exsentences': 3,
+                        'inprop': 'url',
+                        'format': 'json',
+                    }, timeout=15)
+                    page_resp.raise_for_status()
+                    page_data = page_resp.json()
+
+                    pages = page_data.get('query', {}).get('pages', {})
+                    page_id = next(iter(pages)) if pages else None
+                    if not page_id or page_id == '-1' or not pages:
                         continue
 
-                    for title in titles:
-                        if title in seen_titles or len(entries) >= results:
-                            continue
-                        seen_titles.add(title)
-                        try:
-                            summary = wikipedia.summary(title, sentences=3)
-                            page = wikipedia.page(title)
-                            entries.append({
-                                'title': title,
-                                'summary': summary,
-                                'url': page.url,
-                                'content': page.content,
-                                'categories': [c for c in page.categories if 'Categorie' not in c],
-                            })
-                        except Exception:
-                            continue
+                    page_info = pages[page_id]
+                    summary = page_info.get('extract', '') or ''
+                    page_url = page_info.get('fullurl', f"https://{self.lang}.wikipedia.org/wiki/{title.replace(' ', '_')}")
 
-                return entries
-            except Exception as e:
-                logger.warning(f"Wikipedia search error: {e}")
-                return []
+                    # Contenu complet
+                    full_resp = session.get(api_base, params={
+                        'action': 'query',
+                        'titles': title,
+                        'prop': 'extracts',
+                        'explaintext': 1,
+                        'format': 'json',
+                    }, timeout=15)
+                    full_resp.raise_for_status()
+                    full_data = full_resp.json()
+                    full_pages = full_data.get('query', {}).get('pages', {})
+                    full_page_id = next(iter(full_pages)) if full_pages else None
+                    full_content = ''
+                    if full_page_id and full_page_id != '-1':
+                        full_content = full_pages[full_page_id].get('extract', '') or ''
 
-        # Fallback wikipediaapi
-        api = self.api
-        if api:
-            page = api.page(query)
-            if page.exists():
-                return [{
-                    'title': page.title,
-                    'summary': page.summary[:500],
-                    'url': page.fullurl,
-                    'content': page.text,
-                    'categories': [],
-                }]
-        return []
+                    entries.append({
+                        'title': page_info.get('title', title),
+                        'summary': summary[:500],
+                        'url': page_url,
+                        'content': full_content,
+                        'categories': [],
+                    })
+                except Exception as e:
+                    logger.warning(f"Wiki page error for '{title}': {e}")
+                    continue
+
+        session.close()
+        return entries
 
 
 # ──────────────────── TF‑IDF Engine (moteur principal) ────────────────────
