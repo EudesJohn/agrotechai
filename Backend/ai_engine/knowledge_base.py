@@ -443,7 +443,7 @@ class WikipediaScraper:
                     'limit': results,
                     'namespace': 0,
                     'format': 'json',
-                }, timeout=15)
+                }, timeout=8)
                 resp.raise_for_status()
                 data = resp.json()
                 titles = data[1] if len(data) > 1 else []
@@ -471,7 +471,7 @@ class WikipediaScraper:
                         'exsentences': 3,
                         'inprop': 'url',
                         'format': 'json',
-                    }, timeout=15)
+                    }, timeout=8)
                     page_resp.raise_for_status()
                     page_data = page_resp.json()
 
@@ -491,7 +491,7 @@ class WikipediaScraper:
                         'prop': 'extracts',
                         'explaintext': 1,
                         'format': 'json',
-                    }, timeout=15)
+                    }, timeout=8)
                     full_resp.raise_for_status()
                     full_data = full_resp.json()
                     full_pages = full_data.get('query', {}).get('pages', {})
@@ -619,7 +619,7 @@ class WikidataScraper:
                 'language': self.lang,
                 'limit': results,
                 'format': 'json',
-            }, timeout=10)
+            }, timeout=6)
             resp.raise_for_status()
             data = resp.json()
             entities = data.get('search', [])
@@ -647,7 +647,7 @@ class WikidataScraper:
                     'props': 'claims|descriptions|labels',
                     'languages': self.lang,
                     'format': 'json',
-                }, timeout=10)
+                }, timeout=6)
                 resp.raise_for_status()
                 entity_data = resp.json()
             except Exception:
@@ -762,7 +762,7 @@ class OpenAlexScraper:
                     'sort': 'relevance_score:desc',
                     'filter': 'is_paratext:false',
                 },
-                timeout=10,
+                timeout=6,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -871,7 +871,7 @@ class TrefleScraper:
                     'token': self.api_key,
                     'limit': results,
                 },
-                timeout=10,
+                timeout=6,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -944,121 +944,112 @@ class KnowledgeBase:
 
     def search(self, query, top_k=5, min_score=0.1):
         """
-        Recherche live multi-sources :
+        Recherche live multi-sources en parallele :
         1. Wikipedia → articles encyclopediques
         2. Wikidata  → donnees structurees
         3. OpenAlex  → publications scientifiques
         4. Trefle    → base botanique
+        + Plantes medicinales si requete sante
+
+        Tous les appels API sont parallelisés pour eviter le timeout Vercel (10s).
         """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         # Correction orthographique (fautes de frappe)
         query = _correct_spelling(query)
 
         results = []
         seen_titles = set()
 
-        # ── Sources live (API externes) ──
-        try:
-            for w in self.wiki.search(query, results=top_k):
-                title = w.get('title', '')
-                if title not in seen_titles:
+        def _add(result_list, source_name):
+            """Ajoute les resultats d'une source a la liste commune."""
+            for item in result_list:
+                title = item.get('title', '')
+                if title and title not in seen_titles:
                     seen_titles.add(title)
-                    results.append({
-                        'title': title,
-                        'content': (w.get('summary', '') or w.get('content', ''))[:500],
-                        'score': 0.3,
-                        'source': 'wikipedia_live',
-                        'url': w.get('url', ''),
-                    })
-        except Exception as e:
-            logger.warning(f"Wikipedia error: {e}")
+                    results.append(item)
 
-        # Niveau 4 : Wikidata (donnees structurees des plantes)
-        try:
-            for wd in self.wikidata.search(query, results=3):
-                title = wd.get('title', '')
-                if title not in seen_titles:
-                    seen_titles.add(title)
-                    results.append({
-                        'title': title,
-                        'content': (wd.get('summary', '') or wd.get('content', ''))[:500],
-                        'score': 0.35,
-                        'source': 'wikidata',
-                        'url': wd.get('url', ''),
-                    })
-        except Exception as e:
-            logger.warning(f"Wikidata error: {e}")
+        # ── Lancer toutes les recherches en parallele ──
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {}
 
-        # Niveau 5 : OpenAlex (publications scientifiques)
-        try:
-            for oa in self.openalex.search(query, results=3):
-                title = oa.get('title', '')
-                if title not in seen_titles:
-                    seen_titles.add(title)
-                    results.append({
-                        'title': title,
-                        'content': (oa.get('summary', '') or oa.get('content', ''))[:500],
-                        'score': 0.28,
-                        'source': 'openalex',
-                        'url': oa.get('url', ''),
-                    })
-        except Exception as e:
-            logger.warning(f"OpenAlex error: {e}")
+            # 1. Wikipedia
+            futures[executor.submit(self.wiki.search, query, top_k)] = 'wikipedia'
 
-        # Niveau 6 : Trefle (botanique detaillee)
-        if self.trefle.enabled:
-            try:
-                for tr in self.trefle.search(query, results=3):
-                    title = tr.get('title', '')
-                    if title not in seen_titles:
-                        seen_titles.add(title)
-                        results.append({
-                            'title': title,
-                            'content': (tr.get('summary', '') or tr.get('content', ''))[:500],
-                            'score': 0.25,
-                            'source': 'trefle',
-                            'url': tr.get('url', ''),
-                        })
-            except Exception as e:
-                logger.warning(f"Trefle error: {e}")
-        else:
-            logger.info("Trefle desactive (TREFLE_API_KEY non definie)")
+            # 2. Wikidata
+            futures[executor.submit(self.wikidata.search, query, 3)] = 'wikidata'
 
-        # ── Sources live additionnelles : plantes medicinales ──
-        # Quand la requete concerne un probleme de sante, chercher
-        # les plantes medicinales specifiques qui le traitent.
-        q_lower = query.lower()
-        is_health = any(hk in q_lower for hk in HEALTH_KEYWORDS)
-        matched_symptoms = [s for s in REMEDIES if s in q_lower]
-        if is_health or matched_symptoms:
+            # 3. OpenAlex
+            futures[executor.submit(self.openalex.search, query, 3)] = 'openalex'
+
+            # 4. Trefle
+            if self.trefle.enabled:
+                futures[executor.submit(self.trefle.search, query, 3)] = 'trefle'
+
+            # 5. Plantes medicinales (si requete sante)
+            q_lower = query.lower()
+            is_health = any(hk in q_lower for hk in HEALTH_KEYWORDS)
+            matched_symptoms = [s for s in REMEDIES if s in q_lower]
             plants_to_search = set()
-            if matched_symptoms:
-                for s in matched_symptoms:
-                    for p in REMEDIES[s]:
-                        plants_to_search.add(p)
-            # Si aucun symptome specifique mais que c'est une requete sante,
-            # chercher le mot-cle principal + plante medicinale
-            if not plants_to_search:
-                keywords = self.wiki._clean_query(query)
-                if keywords:
-                    plants_to_search.add(keywords[0])
+            if is_health or matched_symptoms:
+                if matched_symptoms:
+                    for s in matched_symptoms:
+                        for p in REMEDIES[s]:
+                            plants_to_search.add(p)
+                if not plants_to_search:
+                    keywords = self.wiki._clean_query(query)
+                    if keywords:
+                        plants_to_search.add(keywords[0])
 
-            for plant in plants_to_search:
-                if len(results) >= top_k * 2:  # ne pas saturer
-                    break
+            if plants_to_search:
+                for plant in list(plants_to_search)[:5]:
+                    futures[executor.submit(self.wiki.search, plant, 2)] = f'remedy_{plant}'
+
+            # ── Collecter les resultats au fur et a mesure ──
+            format_map = {
+                'wikipedia': lambda items: [
+                    {'title': w.get('title', ''), 'content': (w.get('summary', '') or w.get('content', ''))[:500],
+                     'score': 0.3, 'source': 'wikipedia_live', 'url': w.get('url', '')}
+                    for w in items
+                ],
+                'wikidata': lambda items: [
+                    {'title': wd.get('title', ''), 'content': (wd.get('summary', '') or wd.get('content', ''))[:500],
+                     'score': 0.35, 'source': 'wikidata', 'url': wd.get('url', '')}
+                    for wd in items
+                ],
+                'openalex': lambda items: [
+                    {'title': oa.get('title', ''), 'content': (oa.get('summary', '') or oa.get('content', ''))[:500],
+                     'score': 0.28, 'source': 'openalex', 'url': oa.get('url', '')}
+                    for oa in items
+                ],
+                'trefle': lambda items: [
+                    {'title': tr.get('title', ''), 'content': (tr.get('summary', '') or tr.get('content', ''))[:500],
+                     'score': 0.25, 'source': 'trefle', 'url': tr.get('url', '')}
+                    for tr in items
+                ],
+            }
+
+            for future in as_completed(futures):
+                source_label = futures[future]
                 try:
-                    for w in self.wiki.search(plant, results=2):
-                        title = w.get('title', '')
-                        if title not in seen_titles:
-                            seen_titles.add(title)
-                            results.append({
-                                'title': title,
-                                'content': (w.get('summary', '') or w.get('content', ''))[:500],
-                                'score': 0.3,
-                                'source': 'wikipedia_live',
-                                'url': w.get('url', ''),
-                            })
+                    raw_results = future.result(timeout=12)
+                    if not raw_results:
+                        continue
+
+                    # Les remedes sont aussi des resultats Wikipedia
+                    if source_label.startswith('remedy_'):
+                        formatted = format_map['wikipedia'](raw_results)
+                    else:
+                        formatter = format_map.get(source_label)
+                        if formatter:
+                            formatted = formatter(raw_results)
+                        else:
+                            continue
+
+                    _add(formatted, source_label)
+
                 except Exception as e:
-                    logger.warning(f"Plante medicinale '{plant}' error: {e}")
+                    logger.warning(f"Source '{source_label}' error: {e}")
 
         # Trier par score descendant
         results.sort(key=lambda x: x.get('score', 0), reverse=True)
