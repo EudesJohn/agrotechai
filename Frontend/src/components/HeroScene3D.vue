@@ -18,7 +18,7 @@ const container = ref(null)
 
 let scene, camera, renderer, composer
 let plant, leaves = [], particles, stalk
-let clock = new THREE.Clock()
+let clock = new THREE.Timer()
 let animId = null
 let resizeObs = null
 const PARTICLE_COUNT = 80
@@ -78,7 +78,7 @@ function init() {
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.0
   renderer.shadowMap.enabled = true
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  renderer.shadowMap.type = THREE.PCFShadowMap
   renderer.outputColorSpace = THREE.SRGBColorSpace
   el.appendChild(renderer.domElement)
 
@@ -338,7 +338,7 @@ function createParticles() {
 function animate() {
   animId = requestAnimationFrame(animate)
   const delta = Math.min(clock.getDelta(), 0.05) // cap 50ms pour éviter les sauts
-  const time = clock.getElapsedTime()
+  const time = clock.getElapsed()
 
   // Plant sway
   if (plant) {
