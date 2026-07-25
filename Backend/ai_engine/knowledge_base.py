@@ -447,10 +447,21 @@ class WikidataScraper:
             except (KeyError, IndexError, AttributeError):
                 fr_label = search_label
 
-            # Filtre par label français : doit contenir au moins un mot-clé
-            # Ex: "maïs" → garder "Maïs" (Q11575, label fr="Maïs"),
-            #              rejeter "maison" (Q41176, label fr="maison")
-            if not any(kw in fr_label.lower() for kw in clean_lower):
+            # Filtre par label français (avec limites de mot)
+            # Ex: "maïs" → garder "Maïs", rejeter "maison"
+            # "tomates" → garder "Tomate" (singular)
+            def _match_kw(kw_, lbl_):
+                lbl_lower = lbl_.lower()
+                # Mot entier
+                if re.search(r'\b' + re.escape(kw_.lower()) + r'\b', lbl_lower):
+                    return True
+                # Variante singuliere (si mot pluriel)
+                if kw_.endswith('s') and len(kw_) > 3:
+                    sing = kw_[:-1]
+                    if re.search(r'\b' + re.escape(sing) + r'\b', lbl_lower):
+                        return True
+                return False
+            if not any(_match_kw(kw, fr_label) for kw in clean):
                 continue
 
             # Utiliser le label FR pour l'affichage
