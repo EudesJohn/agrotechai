@@ -124,8 +124,8 @@ def diagnose_plant(request):
 @throttle_classes([AIThrottle])
 def ai_search(request):
     """
-    Recherche agricole via la base de connaissances locale
-    (Wikipedia + Wikidata + OpenAlex + ChromaDB). Zero appel API externe.
+    Recherche agricole en direct via les APIs :
+    Wikipedia + Wikidata + OpenAlex + Trefle.
     """
     query = request.data.get('query')
     if not query:
@@ -136,30 +136,15 @@ def ai_search(request):
 
     try:
         engine = get_query_engine()
-        local_result = engine.search(query, top_k=5)
+        live_result = engine.search(query, top_k=5)
 
-        if local_result.get('success') and local_result.get('results'):
-            return Response({
-                "status": "success",
-                "source": "ai_engine_local",
-                "answer": local_result.get('answer', ''),
-                "results": local_result['results'],
-                "sources": local_result.get('sources', []),
-            })
-
-        # Base de connaissances pas encore construite
+        # Toujours retourner les resultats live, meme si vides
         return Response({
             "status": "success",
-            "source": "ai_engine_local",
-            "answer": (
-                "Le moteur de connaissances est en cours de construction. "
-                "Pour l'initialiser, lancez :\n\n"
-                "  python manage.py build_knowledge_base --all\n\n"
-                "En attendant, je ne peux repondre qu'avec les donnees "
-                "deja indexees."
-            ),
-            "results": [],
-            "sources": [],
+            "source": "ai_engine_live",
+            "answer": live_result.get('answer', 'Aucun resultat trouve.'),
+            "results": live_result.get('results', []),
+            "sources": live_result.get('sources', []),
         })
 
     except Exception as e:

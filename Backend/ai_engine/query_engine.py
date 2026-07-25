@@ -162,11 +162,13 @@ class QueryEngine:
 
     def search(self, query, top_k=5):
         """
-        Recherche intelligente dans la base de connaissances.
+        Recherche agricole en direct (APIs live).
 
-        1. Cherche dans ChromaDB (embeddings sémantiques)
-        2. Fallback TF‑IDF
-        3. Wikipedia live en dernier recours
+        Interroge toutes les sources en temps reel :
+          - Wikipedia (articles encyclopediques)
+          - Wikidata (donnees structurees)
+          - OpenAlex (publications scientifiques)
+          - Trefle (botanique)
 
         Args:
             query: Question agricole (ex: "comment cultiver le maïs")
@@ -183,19 +185,20 @@ class QueryEngine:
             'sources': [],
         }
 
-        # Recherche
+        # Recherche live (Wikipedia + Wikidata + OpenAlex + Trefle)
         kb_results = []
         if self.kb:
             try:
                 kb_results = self.kb.search(query, top_k=top_k)
-                logger.info(f"🔍 Recherche KB : {len(kb_results)} résultats")
+                logger.info(f"🔍 Recherche live : {len(kb_results)} résultats")
             except Exception as e:
-                logger.warning(f"⚠️ Recherche KB échouée : {e}")
+                logger.warning(f"⚠️ Recherche live échouée : {e}")
+
+        # Toujours retourner les resultats (memes vides)
+        result['success'] = True
+        result['results'] = kb_results
 
         if kb_results:
-            result['success'] = True
-            result['results'] = kb_results
-
             # Synthétiser une réponse
             result['answer'] = self._synthesize_answer(query, kb_results)
             result['sources'] = [
@@ -207,6 +210,8 @@ class QueryEngine:
                 }
                 for r in kb_results if r.get('score', 0) > 0.1
             ]
+        else:
+            result['answer'] = "Je n'ai pas trouvé de résultat pour cette requête."
 
         return result
 

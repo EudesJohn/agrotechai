@@ -1,22 +1,20 @@
 """
-knowledge_base.py — Moteur de connaissances Agrotech
-===================================================
+knowledge_base.py — Moteur de recherche agricole 100% live
+========================================================
 
-Concu pour Vercel (serverless) : zero dependance lourde.
+Concu pour Vercel (serverless) : aucune dependance lourde (que requests).
 
-Moteurs de recherche (6 sources) :
-  1. TF‑IDF + Wikipedia indexe     → scikit-learn (leger, 25MB)
-  2. Wikipedia live search          → API MediaWiki directe
-  3. Wikidata                       → donnees structurees plantes
-  4. OpenAlex                       → publications scientifiques
-  5. Trefle                         → base botanique (clef API)
-  6. ChromaDB + embeddings          → optionnel (requirements-advanced.txt)
+Sources live (API directes) :
+  1. Wikipedia → articles encyclopediques (API MediaWiki)
+  2. Wikidata  → donnees structurees plantes
+  3. OpenAlex  → publications scientifiques
+  4. Trefle    → base botanique (clef API)
 
 Usage :
   >>> from ai_engine.knowledge_base import KnowledgeBase
   >>> kb = KnowledgeBase()
-  >>> kb.search("comment traiter le mildiou sur les tomates")
-  [{"title": "Mildiou", "content": "...", "score": 0.85}, ...]
+  >>> kb.search("comment cultiver le maïs")
+  [{"title": "Maïs", "content": "...", "score": 0.3}, ...]
 """
 
 import os
@@ -32,9 +30,6 @@ logger = logging.getLogger(__name__)
 # ──────────────────── Dependances optionnelles ────────────────────
 
 HAS_WIKIPEDIA = False
-HAS_TRANSFORMERS = False
-HAS_CHROMA = False
-HAS_SKLEARN = False
 
 try:
     import wikipedia
@@ -45,43 +40,6 @@ except ImportError:
         HAS_WIKIPEDIA = True
     except ImportError:
         pass
-
-try:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    HAS_SKLEARN = True
-except ImportError:
-    pass
-
-try:
-    from sentence_transformers import SentenceTransformer
-    HAS_TRANSFORMERS = True
-except ImportError:
-    pass
-
-try:
-    import chromadb
-    from chromadb.config import Settings
-    HAS_CHROMA = True
-except ImportError:
-    pass
-
-
-# ──────────────────── Configuration ────────────────────
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Vercel : seul /tmp est accessible en ecriture
-if os.getenv('VERCEL', '') == '1' or os.getenv('VERCEL_ENV', ''):
-    DATA_DIR = Path('/tmp') / 'data' / 'knowledge'
-else:
-    DATA_DIR = BASE_DIR / 'data' / 'knowledge'
-
-# ChromaDB : desactive sur Vercel (disque ephemere) sauf si force
-CHROMA_ENABLED = os.getenv('CHROMA_ENABLED', 'False') == 'True'
-CHROMA_DIR = DATA_DIR / 'chroma'
-
-os.makedirs(DATA_DIR, exist_ok=True)
 
 
 # ──────────────────── Wikipedia scraper ────────────────────
@@ -710,180 +668,17 @@ class TrefleScraper:
         return entries
 
 
-# ──────────────────── TF‑IDF Engine (moteur principal) ────────────────────
-
-class TfidfEngine:
-    """
-    Moteur de recherche TF‑IDF.
-    Fonctionne partout : Python pur + scikit-learn (25MB).
-    """
-
-    def __init__(self, language='french'):
-        self.language = language
-        self.documents = []
-        self.metadatas = []
-        self._vectorizer = None
-        self._matrix = None
-
-    def index(self, texts, metadatas=None):
-        """Ajoute des documents a l'index."""
-        if not texts:
-            return
-        self.documents.extend(texts)
-        self.metadatas.extend(metadatas or [{}] * len(texts))
-        self._vectorizer = None
-        self._matrix = None
-        logger.info(f"TF-IDF : {len(texts)} documents indexes (total: {len(self.documents)})")
-
-    def search(self, query, top_k=5, min_score=0.1):
-        """Recherche les documents les plus pertinents."""
-        if not self.documents or not HAS_SKLEARN:
-            return []
-
-        try:
-            corpus = self.documents + [query]
-            self._vectorizer = TfidfVectorizer(
-                max_features=5000,
-                stop_words=self.language,
-            )
-            self._matrix = self._vectorizer.fit_transform(corpus)
-            similarities = cosine_similarity(self._matrix[-1:], self._matrix[:-1]).flatten()
-
-            top_indices = similarities.argsort()[-top_k:][::-1]
-            results = []
-            for idx in top_indices:
-                score = float(similarities[idx])
-                if score < min_score:
-                    continue
-                meta = self.metadatas[idx] if idx < len(self.metadatas) else {}
-                results.append({
-                    'title': meta.get('title', f'Document {idx}'),
-                    'content': self.documents[idx][:500],
-                    'score': round(score, 3),
-                    'source': 'tfidf',
-                    'url': meta.get('url', ''),
-                })
-            return results
-        except Exception as e:
-            logger.warning(f"TF-IDF search error: {e}")
-            return []
-
-    def clear(self):
-        """Vide l'index."""
-        self.documents = []
-        self.metadatas = []
-        self._vectorizer = None
-        self._matrix = None
-
-    @property
-    def count(self):
-        return len(self.documents)
-
-
-# ──────────────────── ChromaDB Engine (optionnel, Vercel Pro+) ─────────────
-
-class ChromaEngine:
-    """Moteur vectoriel ChromaDB. Necessite chromadb + sentence-transformers."""
-
-    def __init__(self):
-        self._collection = None
-        self._model = None
-
-    def is_available(self):
-        return HAS_CHROMA and HAS_TRANSFORMERS and CHROMA_ENABLED
-
-    def _get_collection(self):
-        if self._collection is None and self.is_available():
-            try:
-                os.makedirs(CHROMA_DIR, exist_ok=True)
-                client = chromadb.PersistentClient(
-                    path=str(CHROMA_DIR),
-                    settings=Settings(anonymized_telemetry=False)
-                )
-                self._collection = client.get_or_create_collection(
-                    name="agrotech_knowledge",
-                    metadata={"hnsw:space": "cosine"}
-                )
-            except Exception as e:
-                logger.warning(f"ChromaDB init error: {e}")
-        return self._collection
-
-    def _get_model(self):
-        if self._model is None and HAS_TRANSFORMERS:
-            try:
-                model_name = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
-                self._model = SentenceTransformer(model_name)
-            except Exception as e:
-                logger.warning(f"Embedding model error: {e}")
-        return self._model
-
-    def index(self, texts, metadatas=None, ids=None):
-        col = self._get_collection()
-        model = self._get_model()
-        if not col or not model:
-            return
-
-        try:
-            embeddings = model.encode(texts).tolist()
-            col.add(
-                documents=texts,
-                metadatas=metadatas or [{}] * len(texts),
-                ids=ids or [str(hash(t)) for t in texts],
-                embeddings=embeddings,
-            )
-        except Exception as e:
-            logger.warning(f"ChromaDB add error: {e}")
-
-    def search(self, query, top_k=5):
-        col = self._get_collection()
-        model = self._get_model()
-        if not col or not model:
-            return []
-
-        try:
-            query_embedding = model.encode(query).tolist()
-            r = col.query(query_embeddings=[query_embedding], n_results=top_k)
-
-            results = []
-            if r and r.get('documents') and r['documents']:
-                for i, doc in enumerate(r['documents'][0]):
-                    meta = (r.get('metadatas', [[]])[0] or [{}])[i] if r.get('metadatas') else {}
-                    score = (r.get('distances', [[]])[0] or [0])[i]
-                    results.append({
-                        'title': meta.get('title', 'Article') if meta else 'Article',
-                        'content': doc,
-                        'score': round(1.0 - min(score, 1.0), 3),
-                        'source': 'chroma',
-                    })
-            return results
-        except Exception as e:
-            logger.warning(f"ChromaDB search error: {e}")
-            return []
-
-    @property
-    def count(self):
-        col = self._get_collection()
-        if col:
-            try:
-                return col.count()
-            except Exception:
-                pass
-        return 0
-
-
-# ──────────────────── Knowledge Base (orchestrateur) ────────────────────
+# ──────────────────── Knowledge Base (orchestrateur live) ────────────────────
 
 class KnowledgeBase:
     """
-    Moteur de connaissances Agrotech.
+    Moteur de recherche agricole 100% live.
 
-    Sources (en parallele) :
-      1. ChromaDB     → embeddings vectoriels (optionnel)
-      2. TF‑IDF       → documents indexes (toujours)
-      3. Wikipedia    → articles encyclopediques (direct API)
-      4. Wikidata     → donnees structurees des plantes (nom scientifique, maladies...)
-      5. OpenAlex     → publications scientifiques agricoles
-      6. Trefle       → base botanique detaillee (clef API requise)
+    Sources (APIs directes) :
+      1. Wikipedia → articles encyclopediques (API MediaWiki)
+      2. Wikidata  → donnees structurees des plantes
+      3. OpenAlex  → publications scientifiques agricoles
+      4. Trefle    → base botanique detaillee (clef API requise)
     """
 
     def __init__(self):
@@ -891,84 +686,19 @@ class KnowledgeBase:
         self.wikidata = WikidataScraper()
         self.openalex = OpenAlexScraper()
         self.trefle = TrefleScraper()
-        self.tfidf = TfidfEngine()
-        self.chroma = ChromaEngine()
-
-    def index_texts(self, texts, metadatas=None, ids=None):
-        """Indexe des textes dans tous les moteurs disponibles."""
-        if not texts:
-            return
-
-        # TF-IDF (toujours)
-        self.tfidf.index(texts, metadatas)
-
-        # ChromaDB (si disponible)
-        if self.chroma.is_available():
-            self.chroma.index(texts, metadatas, ids)
-
-    def index_wikipedia_articles(self, articles):
-        """Indexe les articles Wikipedia."""
-        texts = []
-        metadatas = []
-        ids = []
-
-        for i, article in enumerate(articles):
-            content = article.get('content', '') or article.get('summary', '')
-            if len(content) < 50:
-                continue
-
-            chunks = self._chunk_text(content, 500)
-            for j, chunk in enumerate(chunks):
-                texts.append(chunk)
-                metadatas.append({
-                    'title': article.get('title', 'Inconnu'),
-                    'source': 'wikipedia',
-                    'url': article.get('url', ''),
-                })
-                ids.append(f"wiki_{i}_{j}")
-
-        self.index_texts(texts, metadatas, ids)
-        logger.info(f"Wikipedia : {len(articles)} articles indexes ({len(texts)} chunks)")
 
     def search(self, query, top_k=5, min_score=0.1):
         """
-        Recherche multi-sources :
-        1. ChromaDB       → embeddings vectoriels
-        2. TF‑IDF         → corpus local indexe
-        3. Wikipedia      → articles encyclopediques
-        4. Wikidata       → donnees structurees (noms scientifiques, maladies...)
-        5. OpenAlex       → publications scientifiques
+        Recherche live multi-sources :
+        1. Wikipedia → articles encyclopediques
+        2. Wikidata  → donnees structurees
+        3. OpenAlex  → publications scientifiques
+        4. Trefle    → base botanique
         """
         results = []
         seen_titles = set()
 
-        # ── Sources locales (rapides) ──
-
-        # Niveau 1 : ChromaDB (optionnel)
-        if self.chroma.is_available():
-            try:
-                for r in self.chroma.search(query, top_k):
-                    t = r.get('title', '')
-                    if t not in seen_titles:
-                        seen_titles.add(t)
-                        results.append(r)
-            except Exception as e:
-                logger.warning(f"ChromaDB error: {e}")
-
-        # Niveau 2 : TF‑IDF (corpus local)
-        if self.tfidf.count > 0:
-            try:
-                for r in self.tfidf.search(query, top_k, min_score):
-                    t = r.get('title', '')
-                    if t not in seen_titles:
-                        seen_titles.add(t)
-                        results.append(r)
-            except Exception as e:
-                logger.warning(f"TF-IDF error: {e}")
-
-        # ── Sources live (API externes, court timeout) ──
-
-        # Niveau 3 : Wikipedia live
+        # ── Sources live (API externes) ──
         try:
             for w in self.wiki.search(query, results=top_k):
                 title = w.get('title', '')
@@ -1067,31 +797,12 @@ class KnowledgeBase:
         query = f"{disease_name} {plant_name} traitement maladie plante"
         return self.search(query, top_k=5)
 
-    # ── Utilitaires ──
-
-    @staticmethod
-    def _chunk_text(text, chunk_size=500):
-        words = text.split()
-        chunks = []
-        for i in range(0, len(words), chunk_size):
-            chunk = ' '.join(words[i:i + chunk_size])
-            if chunk.strip():
-                chunks.append(chunk)
-        return chunks if chunks else [text]
-
     def get_stats(self):
-        """Statistiques de la base."""
+        """Statistiques de la base (100% live)."""
         return {
-            'tfidf_documents': self.tfidf.count,
-            'chroma_connected': self.chroma.is_available(),
-            'chroma_documents': self.chroma.count if self.chroma.is_available() else 0,
-            'has_sklearn': HAS_SKLEARN,
-            'has_wikipedia': HAS_WIKIPEDIA,
-            'has_chroma': HAS_CHROMA,
-            'has_transformers': HAS_TRANSFORMERS,
-            'chroma_enabled': CHROMA_ENABLED,
+            'sources_wikipedia': True,
             'sources_wikidata': True,
             'sources_openalex': True,
             'sources_trefle': self.trefle.enabled,
-            'mode': 'multi_sources' if not self.chroma.is_available() else 'chroma+multi',
+            'mode': 'live_apis',
         }
