@@ -27,6 +27,79 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+# ──────────────────── Mapping symptomes → plantes medicinales ─────
+
+REMEDIES = {
+    # Rhume, refroidissement
+    'rhume': ['gingembre', 'eucalyptus', 'menthe', 'thym', 'camomille',
+              'tilleul', 'ail', 'oignon', 'citron', 'sureau'],
+    'refroidissement': ['gingembre', 'eucalyptus', 'menthe', 'thym', 'camomille',
+                        'tilleul', 'ail', 'oignon', 'citron', 'sureau'],
+    # Toux
+    'toux': ['thym', 'eucalyptus', 'coquelicot', 'guimauve', 'tussilage',
+             'lierre', 'plantain', 'mauve'],
+    # Fièvre
+    'fievre': ['sureau', 'quinquina', 'menthe', 'camomille', 'tilleul',
+               'saule', 'reine-des-pres'],
+    'fièvre': ['sureau', 'quinquina', 'menthe', 'camomille', 'tilleul',
+               'saule', 'reine-des-pres'],
+    # Maux de tête
+    'migraine': ['camomille', 'menthe poivree', 'grande camomille',
+                 'tilleul', 'lavande', 'saule'],
+    'mal de tete': ['camomille', 'menthe poivree', 'grande camomille',
+                    'tilleul', 'lavande', 'saule'],
+    # Maux de ventre / digestion
+    'ventre': ['menthe', 'camomille', 'gingembre', 'fenouil', 'anis',
+               'curcuma', 'aloes'],
+    'digestion': ['menthe', 'camomille', 'gingembre', 'fenouil', 'anis',
+                  'curcuma', 'artichaut', 'romarin'],
+    'diarrhee': ['riz', 'carotte', 'coing', 'myrtille', 'mauve'],
+    'constipation': ['sene', 'rhubarbe', 'lin', 'psyllium', 'pruneau'],
+    # Paludisme
+    'paludisme': ['quinquina', 'artemisia', 'neem', 'morinda'],
+    'palu': ['quinquina', 'artemisia', 'neem', 'morinda'],
+    # Vers intestinaux
+    'vers': ['ail', 'absinthe', 'neem', 'tanaisie', 'semen-contra'],
+    # Insomnie, stress
+    'insomnie': ['camomille', 'tilleul', 'valeriane', 'passiflore',
+                 'lavande', 'melisse'],
+    'stress': ['camomille', 'tilleul', 'valeriane', 'passiflore',
+               'lavande', 'melisse', 'millepertuis'],
+    # Plaies, blessures
+    'plaie': ['aloes', 'calendula', 'arnica', 'millepertuis', 'plantain',
+              'consoude'],
+    'blessure': ['aloes', 'calendula', 'arnica', 'millepertuis', 'plantain',
+                 'consoude'],
+    'coupure': ['aloes', 'calendula', 'arnica', 'plantain'],
+    # Inflammation
+    'inflammation': ['curcuma', 'camomille', 'consoude', 'arnica',
+                     'reine-des-pres', 'harpagophytum'],
+    'gonflement': ['curcuma', 'camomille', 'consoude', 'arnica'],
+    # Problèmes de peau
+    'peau': ['aloes', 'calendula', 'lavande', 'tea tree', 'camomille',
+             'bourrache'],
+    'acne': ['aloes', 'tea tree', 'calendula', 'lavande', 'camomille'],
+    # Infections urinaires
+    'urinaire': ['cranberry', 'prele', 'pissenlit', 'orthosiphon',
+                 'queues de cerise'],
+    # Anémie, fatigue
+    'anemie': ['ortie', 'cresson', 'epinard', 'persil'],
+    'fatigue': ['gingembre', 'ginseng', 'ortie', 'romarin', 'guarana',
+                'moringa'],
+}
+
+# Termes qui indiquent une recherche de plante médicinale
+HEALTH_KEYWORDS = {
+    'guerir', 'guérir', 'soigner', 'traiter', 'soulager',
+    'medicinal', 'médicinal', 'medecine', 'médecine', 'remède',
+    'remede', 'plante medicinale', 'plante médicinale',
+    'bienfait', 'bienfaits', 'vertu', 'vertus', 'propriete',
+    'propriétés', 'proprietes', 'therapeutique', 'thérapeutique',
+    'naturel', 'naturelle', 'naturels', 'traditionnel',
+    'traditionnelle', 'africain', 'tradition',
+}
+
+
 # ──────────────────── Dependances optionnelles ────────────────────
 
 HAS_WIKIPEDIA = False
@@ -141,6 +214,28 @@ class WikipediaScraper:
                 # Mot unique : essayer avec des contextes agricoles
                 queries.append(f"culture {keywords[0]}")
                 queries.append(f"plante {keywords[0]}")
+
+        # 4. Si la requete concerne un probleme de sante → plantes medicinales
+        q_lower = query.lower()
+        is_health_query = any(hk in q_lower for hk in HEALTH_KEYWORDS)
+        if not is_health_query and keywords:
+            is_health_query = any(kw in HEALTH_KEYWORDS for kw in keywords)
+        # Verifier si un mot-cle ou la requete entiere contient un symptome connu
+        has_symptom = any(kw.lower() in REMEDIES for kw in keywords) if keywords else False
+        has_symptom = has_symptom or any(symptom in q_lower for symptom in REMEDIES)
+        if is_health_query or has_symptom:
+            # Chercher les plantes medicinales pour chaque symptome
+            for symptom, plants in REMEDIES.items():
+                if symptom in q_lower or symptom in keywords:
+                    queries.append(f"plante medicinale {symptom}")
+                    queries.append(f"plante pour soigner le {symptom}")
+                    for plant in plants[:3]:  # top 3 plantes
+                        queries.append(f"{plant} plante medicinale")
+            # Fallback generique
+            if not any(kw.lower() in REMEDIES for kw in keywords):
+                queries.append("plante medicinale")
+                if keywords:
+                    queries.append(f"plante medicinale {keywords[0]}")
 
         # Deduplicater (garde l'ordre)
         seen = set()
@@ -285,7 +380,7 @@ class WikipediaScraper:
         return entries
 
     def _is_agricultural(self, text, keywords=None):
-        """Verifie si un texte est pertinent pour l'agriculture."""
+        """Verifie si un texte est pertinent pour l'agriculture ou la phytotherapie."""
         if not text:
             return False
         text_lower = text.lower()
@@ -296,7 +391,7 @@ class WikipediaScraper:
                 if re.search(r'\b' + re.escape(kw.lower()) + r'\b', text_lower):
                     return True
 
-        # Mots-cles agricoles generaux (fallback)
+        # Mots-cles agricoles generaux + plantes medicinales (fallback)
         AGRI_SIGNALS = {
             'céréale', 'cereale', 'plante', 'agriculture', 'agricole',
             'culture', 'cultivé', 'cultive', 'cultiver', 'cultivée',
@@ -308,6 +403,18 @@ class WikipediaScraper:
             'botanique', 'botany', 'agricultural', 'crop', 'plant',
             'farming', 'cultivation', 'harvest', 'fertiliser',
             'maladie', 'ravageur', 'traitement', 'phytopathologie',
+            # Plantes medicinales
+            'medicinal', 'médicinal', 'médicinale', 'medicinale',
+            'therapeutique', 'thérapeutique', 'phytotherapie',
+            'phytothérapie', 'remède', 'remede', 'guérison',
+            'guerison', 'soulager', 'soigner', 'bienfait',
+            'propriete', 'propriété', 'proprietes', 'propriétés',
+            'vertu', 'vertus', 'afeection', 'maladie', 'symptome',
+            'symptôme', 'traiter', 'infusion', 'tisane', 'decoction',
+            'décoction', 'cataplasme', 'huile essentielle',
+            'rhume', 'toux', 'fievre', 'fièvre', 'grippe',
+            'digestion', 'migraine', 'insomnie', 'stress',
+            'inflammation', 'infection', 'douleur',
         }
         return any(signal in text_lower for signal in AGRI_SIGNALS)
 
@@ -764,6 +871,43 @@ class KnowledgeBase:
                 logger.warning(f"Trefle error: {e}")
         else:
             logger.info("Trefle desactive (TREFLE_API_KEY non definie)")
+
+        # ── Sources live additionnelles : plantes medicinales ──
+        # Quand la requete concerne un probleme de sante, chercher
+        # les plantes medicinales specifiques qui le traitent.
+        q_lower = query.lower()
+        is_health = any(hk in q_lower for hk in HEALTH_KEYWORDS)
+        matched_symptoms = [s for s in REMEDIES if s in q_lower]
+        if is_health or matched_symptoms:
+            plants_to_search = set()
+            if matched_symptoms:
+                for s in matched_symptoms:
+                    for p in REMEDIES[s]:
+                        plants_to_search.add(p)
+            # Si aucun symptome specifique mais que c'est une requete sante,
+            # chercher le mot-cle principal + plante medicinale
+            if not plants_to_search:
+                keywords = self.wiki._clean_query(query)
+                if keywords:
+                    plants_to_search.add(keywords[0])
+
+            for plant in plants_to_search:
+                if len(results) >= top_k * 2:  # ne pas saturer
+                    break
+                try:
+                    for w in self.wiki.search(plant, results=2):
+                        title = w.get('title', '')
+                        if title not in seen_titles:
+                            seen_titles.add(title)
+                            results.append({
+                                'title': title,
+                                'content': (w.get('summary', '') or w.get('content', ''))[:500],
+                                'score': 0.3,
+                                'source': 'wikipedia_live',
+                                'url': w.get('url', ''),
+                            })
+                except Exception as e:
+                    logger.warning(f"Plante medicinale '{plant}' error: {e}")
 
         # Trier par score descendant
         results.sort(key=lambda x: x.get('score', 0), reverse=True)
