@@ -102,6 +102,44 @@ HEALTH_KEYWORDS = {
 
 # ──────────────────── Correcteur orthographique flou ─────────────
 
+# Mots sans accents qui doivent etre compris comme leur forme accentuee
+# Utile pour "mais" → "maïs", "cote" → "côte", etc.
+DIACRITIC_MAP = {
+    'mais': 'maïs',
+    'cote': 'côte',
+    'cotes': 'côtes',
+    'miel': 'miel',
+    'pere': 'père',
+    'mère': 'mere',
+    'legume': 'légume',
+    'legumes': 'légumes',
+    'epice': 'épice',
+    'epices': 'épices',
+    'epicee': 'épicée',
+    'epinard': 'épinard',
+    'epinards': 'épinards',
+    'propriete': 'propriété',
+    'proprietes': 'propriétés',
+    'therapeutique': 'thérapeutique',
+    'medecine': 'médecine',
+    'phenomene': 'phénomène',
+    'bacterie': 'bactérie',
+    'bacteries': 'bactéries',
+    'vegetal': 'végétal',
+    'vegetale': 'végétale',
+    'vegetaux': 'végétaux',
+    'cereale': 'céréale',
+    'cereales': 'céréales',
+    'recolte': 'récolte',
+    'recolter': 'récolter',
+    'decocotion': 'décoction',
+    'fievre': 'fièvre',
+    'guerir': 'guérir',
+    'medicinal': 'médicinal',
+    'medicinale': 'médicinale',
+    'medicinaux': 'médicinaux',
+}
+
 def _build_vocab():
     """Construit le vocabulaire connu (plantes, symptomes, mots-cles)."""
     words = set()
@@ -182,11 +220,15 @@ def _correct_spelling(query, max_dist=2):
     words = query.lower().split()
     corrected = []
     for w in words:
+        # 1. Verifier le mapping diacritique (meme si le mot est dans le vocabulaire)
+        if w in DIACRITIC_MAP:
+            corrected.append(DIACRITIC_MAP[w])
+            continue
+        # 2. Mot court ou deja connu → inchangé
         if len(w) <= 3 or w in _VOCAB:
-            # Mot court ou deja connu → inchangé
             corrected.append(w)
             continue
-        # Chercher le plus proche dans le vocabulaire
+        # 3. Chercher le plus proche dans le vocabulaire (fuzzy)
         best = None
         best_dist = max_dist + 1
         for v in _VOCAB:
@@ -237,7 +279,7 @@ class WikipediaScraper:
 
     SPECIFIC_PLANTS = [
         "neem", "moringa", "aloe vera", "gingembre", "curcuma",
-        "cotonnier", "mais", "riz", "manioc", "igname", "arachide",
+        "cotonnier", "mais", "maïs", "riz", "manioc", "igname", "arachide",
         "niebe", "sorgho", "millet", "tomate", "oignon", "piment",
         "aubergine", "gombo", "chou", "laitue", "carotte",
         "haricot", "soja", "palmier a huile", "cacaoyer", "cafier",
