@@ -136,30 +136,28 @@ class WikipediaScraper:
         'taille', 'bouturer', 'greffer',
     }
 
+    @staticmethod
+    def _clean_query_static(query):
+        """Version statique du nettoyage de requete (utilisable par WikidataScraper)."""
+        words = query.lower().split()
+        meaningful = [w for w in words
+                      if w not in WikipediaScraper.STOPWORDS_FR
+                      and w not in WikipediaScraper.ACTION_VERBS
+                      and len(w) > 2]
+        if meaningful:
+            return meaningful
+        fallback = [w for w in words if w not in WikipediaScraper.STOPWORDS_FR and len(w) > 2]
+        if fallback:
+            return fallback
+        return [w for w in words if len(w) > 2]
+
     def _clean_query(self, query):
         """Extrait les mots-cles pertinents d'une question agricole.
 
         Garde les mots-porteurs de sens (noms de plantes, maladies, etc.),
         supprime les verbes d'action generiques et les mots interrogatifs.
         """
-        words = query.lower().split()
-        # Garder les mots qui ne sont ni stopwords ni verbes d'action
-        meaningful = [w for w in words
-                      if w not in self.STOPWORDS_FR
-                      and w not in self.ACTION_VERBS
-                      and len(w) > 2]
-
-        # Si on a des mots porteurs de sens, les utiliser dans l'ordre
-        if meaningful:
-            return meaningful
-
-        # Sinon, garder les mots les plus longs (sauf stopwords purs)
-        fallback = [w for w in words if w not in self.STOPWORDS_FR and len(w) > 2]
-        if fallback:
-            return fallback
-
-        # Dernier recours : juste enlever les stopwords courts
-        return [w for w in words if len(w) > 2]
+        return self._clean_query_static(query)
 
     def _try_queries(self, query):
         """Genere plusieurs formulations de recherche, de la plus specifique a la plus generale."""
@@ -335,16 +333,33 @@ class WikidataScraper:
     def __init__(self, lang='fr'):
         self.lang = lang
         self.api_base = "https://www.wikidata.org/w/api.php"
+        self._session = None
+
+    def _get_session(self):
+        if self._session is None:
+            import requests as req
+            self._session = req.Session()
+            self._session.headers.update({
+                'User-Agent': 'AgrotechAI/1.0 (agriculture bot; contact@agrotech.bj)'
+            })
+        return self._session
 
     def search(self, query, results=3):
         """Recherche une plante dans Wikidata et retourne ses propriétés."""
         import requests as req
+        session = self._get_session()
+
+        # Nettoyer la requete : extraire les mots-cles significatifs
+        clean = WikipediaScraper._clean_query_static(query)
+        if not clean:
+            return []
+        search_words = ' '.join(clean[:3])  # max 3 mots
 
         # 1. Chercher les entités Wikidata correspondant au nom
         try:
-            resp = req.get(self.api_base, params={
+            resp = session.get(self.api_base, params={
                 'action': 'wbsearchentities',
-                'search': query,
+                'search': search_words,
                 'language': self.lang,
                 'limit': results,
                 'format': 'json',
@@ -367,7 +382,7 @@ class WikidataScraper:
 
             # 2. Récupérer toutes les propriétés de l'entité
             try:
-                resp = req.get(self.api_base, params={
+                resp = session.get(self.api_base, params={
                     'action': 'wbgetentities',
                     'ids': entity_id,
                     'props': 'claims|descriptions|labels',
@@ -418,7 +433,7 @@ class WikidataScraper:
                 parts.append(f"• {prop_label}: {value}")
 
             entries.append({
-                'title': f"📊 {label}",
+                'title': label,
                 'summary': '\n'.join(parts[:3]),
                 'content': '\n'.join(parts),
                 'url': f"https://www.wikidata.org/wiki/{entity_id}",
@@ -500,7 +515,7 @@ class OpenAlexScraper:
                 content += f"Année: {pub_year} | Cité {cited_by} fois"
 
             entries.append({
-                'title': f"📄 {title}",
+                'title': title,
                 'summary': abstract[:300] or title,
                 'content': content,
                 'url': url,
@@ -600,7 +615,7 @@ class TrefleScraper:
                             parts.append(f"• {key.replace('_', ' ')}: {val}")
 
                 entries.append({
-                    'title': f"🌱 {common_name or scientific_name}",
+                    'title': common_name or scientific_name,
                     'summary': '\n'.join(parts[:3]),
                     'content': '\n'.join(parts),
                     'url': f"https://trefle.io/plants/{plant.get('id', '')}",

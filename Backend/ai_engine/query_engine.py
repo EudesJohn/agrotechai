@@ -274,7 +274,7 @@ class QueryEngine:
             source = r.get('source', 'wikipedia')
 
             # Émoji selon la source
-            emoji = {'wikipedia_live': '📖', 'wikidata': '📊', 'openalex': '📄'}.get(source, '📎')
+            emoji = {'wikipedia_live': '📖', 'wikidata': '📊', 'openalex': '📄', 'trefle': '🌱'}.get(source, '📎')
             parts.append(f"{emoji} **{title}**\n{content}\n")
 
         # Ajouter le nombre total de sources
