@@ -67,7 +67,12 @@ except ImportError:
 # ──────────────────── Configuration ────────────────────
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / 'data' / 'knowledge'
+
+# Vercel : seul /tmp est accessible en ecriture
+if os.getenv('VERCEL', '') == '1' or os.getenv('VERCEL_ENV', ''):
+    DATA_DIR = Path('/tmp') / 'data' / 'knowledge'
+else:
+    DATA_DIR = BASE_DIR / 'data' / 'knowledge'
 
 # ChromaDB : desactive sur Vercel (disque ephemere) sauf si force
 CHROMA_ENABLED = os.getenv('CHROMA_ENABLED', 'False') == 'True'
