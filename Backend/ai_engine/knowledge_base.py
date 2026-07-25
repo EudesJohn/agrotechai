@@ -123,39 +123,73 @@ class WikipediaScraper:
         self.lang = lang
         self._api = None
 
+    # Mots generiques (action) vs mots porteurs de sens (noms)
+    ACTION_VERBS = {
+        'faire', 'cultiver', 'planter', 'traiter', 'soigner',
+        'recolter', 'arroser', 'fertiliser', 'nourrir', 'preparer',
+        'obtenir', 'ameliorer', 'augmenter', 'reduire', 'eliminer',
+        'proteger', 'lutter', 'combattre', 'controler', 'gerer',
+        'utiliser', 'appliquer', 'pulveriser', 'semer', 'repiquer',
+        'taille', 'bouturer', 'greffer',
+    }
+
     def _clean_query(self, query):
-        """Extrait les mots-cles pertinents d'une question agricole."""
+        """Extrait les mots-cles pertinents d'une question agricole.
+
+        Garde les mots-porteurs de sens (noms de plantes, maladies, etc.),
+        supprime les verbes d'action generiques et les mots interrogatifs.
+        """
         words = query.lower().split()
-        keywords = [w for w in words if w not in self.STOPWORDS_FR and len(w) > 2]
-        # Si pas assez de mots-cles, garder les plus longs
-        if len(keywords) < 2:
-            keywords = sorted(words, key=len, reverse=True)[:3]
-        return keywords
+        # Garder les mots qui ne sont ni stopwords ni verbes d'action
+        meaningful = [w for w in words
+                      if w not in self.STOPWORDS_FR
+                      and w not in self.ACTION_VERBS
+                      and len(w) > 2]
+
+        # Si on a des mots porteurs de sens, les utiliser dans l'ordre
+        if meaningful:
+            return meaningful
+
+        # Sinon, garder les mots les plus longs (sauf stopwords purs)
+        fallback = [w for w in words if w not in self.STOPWORDS_FR and len(w) > 2]
+        if fallback:
+            return fallback
+
+        # Dernier recours : juste enlever les stopwords courts
+        return [w for w in words if len(w) > 2]
 
     def _try_queries(self, query):
-        """Genere plusieurs formulations de recherche."""
+        """Genere plusieurs formulations de recherche, de la plus specifique a la plus generale."""
         keywords = self._clean_query(query)
 
         queries = []
-        # 1. La requete originale
+        # 1. Original (utile pour les questions precises)
         queries.append(query)
 
-        # 2. Mots-cles joins
+        # 2. Mots significatifs dans l'ordre original
         if keywords:
-            queries.append(' '.join(keywords))
+            q = ' '.join(keywords)
+            if q != query:
+                queries.append(q)
 
-        # 3. Chercher specifiquement le premier mot-cle (souvent le sujet principal)
+        # 3. Le premier mot-cle + contexte agricole
+        #    (le premier mot-cle est le sujet principal apres nettoyage)
         if keywords:
-            queries.append(f"{keywords[0]} plante culture")
-            if len(keywords) > 1:
+            queries.append(f"{keywords[0]} agriculture")
+            if len(keywords) >= 2:
                 queries.append(f"{keywords[0]} {keywords[1]}")
+            else:
+                # Mot unique : essayer avec des contextes agricoles
+                queries.append(f"culture {keywords[0]}")
+                queries.append(f"plante {keywords[0]}")
 
-        # Deduplicater
+        # Deduplicater (garde l'ordre)
         seen = set()
         unique = []
         for q in queries:
-            if q not in seen:
-                seen.add(q)
+            ql = q.lower()
+            if ql not in seen:
+                seen.add(ql)
                 unique.append(q)
         return unique
 
