@@ -4,12 +4,13 @@ knowledge_base.py — Moteur de connaissances Agrotech
 
 Concu pour Vercel (serverless) : zero dependance lourde.
 
-Moteurs de recherche (5 sources) :
+Moteurs de recherche (6 sources) :
   1. TF‑IDF + Wikipedia indexe     → scikit-learn (leger, 25MB)
   2. Wikipedia live search          → API MediaWiki directe
   3. Wikidata                       → donnees structurees plantes
   4. OpenAlex                       → publications scientifiques
-  5. ChromaDB + embeddings          → optionnel (requirements-advanced.txt)
+  5. Trefle                         → base botanique (clef API)
+  6. ChromaDB + embeddings          → optionnel (requirements-advanced.txt)
 
 Usage :
   >>> from ai_engine.knowledge_base import KnowledgeBase
@@ -521,6 +522,94 @@ class OpenAlexScraper:
                     pairs.append((pos, word))
             pairs.sort(key=lambda x: x[0])
             return ' '.join(word for _, word in pairs)
+
+
+# ──────────────────── Trefle scraper ─────────────────────
+
+class TrefleScraper:
+    """Recherche Trefle.io pour des donnees botaniques detaillees.
+
+    API specialisee dans les plantes (besoin d'une clef gratuite).
+    https://trefle.io
+
+    Pour obtenir une clef : https://trefle.io/signup
+    Puis definissez TREFLE_API_KEY dans les variables d'environnement Vercel.
+    """
+
+    def __init__(self):
+        self.api_key = os.getenv('TREFLE_API_KEY', '')
+        self.base_url = "https://trefle.io/api/v1"
+
+    @property
+    def enabled(self):
+        return bool(self.api_key)
+
+    def search(self, query, results=5):
+        """Recherche des plantes dans Trefle."""
+        if not self.enabled:
+            logger.info("Trefle desactive : definir TREFLE_API_KEY")
+            return []
+
+        import requests as req
+
+        try:
+            resp = req.get(
+                f"{self.base_url}/plants/search",
+                params={
+                    'q': query,
+                    'token': self.api_key,
+                    'limit': results,
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            logger.warning(f"Trefle search error: {e}")
+            return []
+
+        entries = []
+        for plant in data.get('data', [])[:results]:
+            try:
+                common_name = plant.get('common_name', '')
+                scientific_name = plant.get('scientific_name', '')
+                family = plant.get('family', '')
+                year = plant.get('year', '')
+                image_url = plant.get('image_url', '')
+
+                # Donnees de croissance
+                growth = plant.get('growth', {}) or {}
+                specifications = plant.get('specifications', {}) or {}
+
+                parts = [f"**{common_name or scientific_name}**"]
+                if scientific_name:
+                    parts.append(f"_{scientific_name}_")
+                if family:
+                    parts.append(f"Famille: {family}")
+                if growth:
+                    for key in ['days_to_harvest', 'growth_months', 'bloom_months', 'row_spacing', 'spread']:
+                        val = growth.get(key)
+                        if val:
+                            parts.append(f"• {key.replace('_', ' ')}: {val}")
+                if specifications:
+                    for key in ['ligneous_type', 'growth_form', 'growth_rate', 'average_height']:
+                        val = specifications.get(key)
+                        if val:
+                            parts.append(f"• {key.replace('_', ' ')}: {val}")
+
+                entries.append({
+                    'title': f"🌱 {common_name or scientific_name}",
+                    'summary': '\n'.join(parts[:3]),
+                    'content': '\n'.join(parts),
+                    'url': f"https://trefle.io/plants/{plant.get('id', '')}",
+                    'source': 'trefle',
+                    'score': 0.25,
+                })
+            except Exception as e:
+                logger.warning(f"Trefle parse error: {e}")
+                continue
+
+        return entries
         except Exception:
             return ''
 
@@ -698,12 +787,14 @@ class KnowledgeBase:
       3. Wikipedia    → articles encyclopediques (direct API)
       4. Wikidata     → donnees structurees des plantes (nom scientifique, maladies...)
       5. OpenAlex     → publications scientifiques agricoles
+      6. Trefle       → base botanique detaillee (clef API requise)
     """
 
     def __init__(self):
         self.wiki = WikipediaScraper()
         self.wikidata = WikidataScraper()
         self.openalex = OpenAlexScraper()
+        self.trefle = TrefleScraper()
         self.tfidf = TfidfEngine()
         self.chroma = ChromaEngine()
 
@@ -829,6 +920,25 @@ class KnowledgeBase:
         except Exception as e:
             logger.warning(f"OpenAlex error: {e}")
 
+        # Niveau 6 : Trefle (botanique detaillee)
+        if self.trefle.enabled:
+            try:
+                for tr in self.trefle.search(query, results=3):
+                    title = tr.get('title', '')
+                    if title not in seen_titles:
+                        seen_titles.add(title)
+                        results.append({
+                            'title': title,
+                            'content': (tr.get('summary', '') or tr.get('content', ''))[:500],
+                            'score': 0.25,
+                            'source': 'trefle',
+                            'url': tr.get('url', ''),
+                        })
+            except Exception as e:
+                logger.warning(f"Trefle error: {e}")
+        else:
+            logger.info("Trefle desactive (TREFLE_API_KEY non definie)")
+
         # Trier par score descendant
         results.sort(key=lambda x: x.get('score', 0), reverse=True)
         return results[:top_k]
@@ -886,5 +996,6 @@ class KnowledgeBase:
             'chroma_enabled': CHROMA_ENABLED,
             'sources_wikidata': True,
             'sources_openalex': True,
+            'sources_trefle': self.trefle.enabled,
             'mode': 'multi_sources' if not self.chroma.is_available() else 'chroma+multi',
         }

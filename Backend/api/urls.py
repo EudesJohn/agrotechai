@@ -12,4 +12,5 @@ urlpatterns = [
     path('admin-stats/', views.admin_stats, name='admin_stats'),
     path('_migrate/', views.run_migration, name='run_migration'),
     path('_build_kb/', views.build_knowledge_base, name='build_knowledge_base'),
+    path('_debug_search/', views.debug_search, name='debug_search'),
 ]

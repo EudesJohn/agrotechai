@@ -125,7 +125,7 @@ def diagnose_plant(request):
 def ai_search(request):
     """
     Recherche agricole via la base de connaissances locale
-    (Wikipedia + ChromaDB). Zero appel API externe.
+    (Wikipedia + Wikidata + OpenAlex + ChromaDB). Zero appel API externe.
     """
     query = request.data.get('query')
     if not query:
@@ -168,6 +168,101 @@ def ai_search(request):
             {"error": f"Erreur du moteur de recherche: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+# ── Diagnostic de recherche (debug) ───────────────────────────────
+
+@api_view(['GET', 'POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def debug_search(request):
+    """Test chaque source de recherche independamment et retourne les resultats bruts."""
+    query = 'tomate'
+    if request.method == 'POST':
+        query = request.data.get('query', 'tomate')
+
+    results = {}
+    errors = {}
+
+    # Tester KnowledgeBase
+    try:
+        from ai_engine.knowledge_base import KnowledgeBase, WikipediaScraper, WikidataScraper, OpenAlexScraper, TrefleScraper
+        results['imports'] = 'OK'
+        results['stats'] = {}
+
+        kb = KnowledgeBase()
+        results['stats'] = kb.get_stats()
+
+        # Test Wikipedia
+        try:
+            wiki = WikipediaScraper()
+            wiki_results = wiki.search(query, results=3)
+            results['wikipedia'] = [
+                {'title': r.get('title', ''), 'score': r.get('score', 0), 'has_content': bool(r.get('content', ''))}
+                for r in wiki_results
+            ]
+        except Exception as e:
+            results['wikipedia'] = []
+            errors['wikipedia'] = str(e)
+
+        # Test Wikidata
+        try:
+            wd = WikidataScraper()
+            wd_results = wd.search(query, results=2)
+            results['wikidata'] = [
+                {'title': r.get('title', ''), 'content_preview': r.get('content', '')[:100]}
+                for r in wd_results
+            ]
+        except Exception as e:
+            results['wikidata'] = []
+            errors['wikidata'] = str(e)
+
+        # Test OpenAlex
+        try:
+            oa = OpenAlexScraper()
+            oa_results = oa.search(query, results=2)
+            results['openalex'] = [
+                {'title': r.get('title', ''), 'score': r.get('score', 0)}
+                for r in oa_results
+            ]
+        except Exception as e:
+            results['openalex'] = []
+            errors['openalex'] = str(e)
+
+        # Test Trefle
+        try:
+            tr = TrefleScraper()
+            results['trefle_enabled'] = tr.enabled
+            if tr.enabled:
+                tr_results = tr.search(query, results=2)
+                results['trefle'] = [
+                    {'title': r.get('title', '')} for r in tr_results
+                ]
+            else:
+                results['trefle'] = 'desactive (TREFLE_API_KEY manquante)'
+        except Exception as e:
+            results['trefle'] = []
+            errors['trefle'] = str(e)
+
+        # Test KB.search()
+        try:
+            kb_results = kb.search(query, top_k=5)
+            results['kb_search'] = [
+                {'title': r.get('title', ''), 'source': r.get('source', ''), 'score': r.get('score', 0)}
+                for r in kb_results
+            ]
+        except Exception as e:
+            results['kb_search'] = []
+            errors['kb_search'] = str(e)
+
+    except Exception as e:
+        results['import_error'] = str(e)
+
+    return Response({
+        'query': query,
+        'results': results,
+        'errors': errors if errors else None,
+    })
 
 
 # ── Profils utilisateur ────────────────────────────────────────────
