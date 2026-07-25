@@ -4,10 +4,12 @@ knowledge_base.py — Moteur de connaissances Agrotech
 
 Concu pour Vercel (serverless) : zero dependance lourde.
 
-Moteurs de recherche :
-  1. TF‑IDF + Wikipedia indexe   → scikit-learn (leger, 25MB)
-  2. Wikipedia live search        → requetes HTTP (zero dep)
-  3. ChromaDB + embeddings        → optionnel (requirements-advanced.txt)
+Moteurs de recherche (5 sources) :
+  1. TF‑IDF + Wikipedia indexe     → scikit-learn (leger, 25MB)
+  2. Wikipedia live search          → API MediaWiki directe
+  3. Wikidata                       → donnees structurees plantes
+  4. OpenAlex                       → publications scientifiques
+  5. ChromaDB + embeddings          → optionnel (requirements-advanced.txt)
 
 Usage :
   >>> from ai_engine.knowledge_base import KnowledgeBase
@@ -310,6 +312,219 @@ class WikipediaScraper:
         return entries
 
 
+# ──────────────────── Wikidata scraper ────────────────────
+
+class WikidataScraper:
+    """Recherche Wikidata pour des informations structurées sur les plantes.
+
+    Appels API directs (gratuits, sans clef) à l'API Wikidata.
+    """
+
+    PLANT_PROPERTIES = {
+        'P225': 'Nom scientifique',
+        'P171': 'Classification',
+        'P185': 'Port de la plante',
+        'P3518': 'Cycle de vie',
+        'P3529': 'Hauteur',
+        'P1576': 'Maladies / Ravageurs',
+        'P1672': 'Produits dérivés',
+        'P780': 'Traitements possibles',
+    }
+
+    def __init__(self, lang='fr'):
+        self.lang = lang
+        self.api_base = "https://www.wikidata.org/w/api.php"
+
+    def search(self, query, results=3):
+        """Recherche une plante dans Wikidata et retourne ses propriétés."""
+        import requests as req
+
+        # 1. Chercher les entités Wikidata correspondant au nom
+        try:
+            resp = req.get(self.api_base, params={
+                'action': 'wbsearchentities',
+                'search': query,
+                'language': self.lang,
+                'limit': results,
+                'format': 'json',
+            }, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            entities = data.get('search', [])
+        except Exception as e:
+            logger.warning(f"Wikidata search error: {e}")
+            return []
+
+        if not entities:
+            return []
+
+        entries = []
+        for entity in entities:
+            entity_id = entity.get('id', '')
+            label = entity.get('label', query)
+            description = entity.get('description', '')
+
+            # 2. Récupérer toutes les propriétés de l'entité
+            try:
+                resp = req.get(self.api_base, params={
+                    'action': 'wbgetentities',
+                    'ids': entity_id,
+                    'props': 'claims|descriptions|labels',
+                    'languages': self.lang,
+                    'format': 'json',
+                }, timeout=10)
+                resp.raise_for_status()
+                entity_data = resp.json()
+            except Exception:
+                continue
+
+            claims = {}
+            try:
+                claims = entity_data['entities'][entity_id].get('claims', {})
+            except (KeyError, IndexError):
+                pass
+
+            # 3. Extraire les propriétés pertinentes pour l'agriculture
+            found_props = {}
+            for prop_id, prop_label in self.PLANT_PROPERTIES.items():
+                if prop_id in claims:
+                    values = []
+                    for claim in claims[prop_id]:
+                        try:
+                            mainsnak = claim.get('mainsnak', {})
+                            if mainsnak.get('snaktype') == 'value':
+                                datavalue = mainsnak.get('datavalue', {})
+                                value = datavalue.get('value', {})
+                                if isinstance(value, dict):
+                                    if 'text' in value:
+                                        values.append(value['text'])
+                                    elif 'id' in value:
+                                        values.append(value['id'])
+                                    else:
+                                        values.append(str(value.get('amount', value)))
+                                else:
+                                    values.append(str(value))
+                        except Exception:
+                            continue
+                    if values:
+                        found_props[prop_label] = '; '.join(values[:3])
+
+            # Construire le contenu
+            parts = [f"**{label}**"]
+            if description:
+                parts.append(f"_{description}_")
+            for prop_label, value in found_props.items():
+                parts.append(f"• {prop_label}: {value}")
+
+            entries.append({
+                'title': f"📊 {label}",
+                'summary': '\n'.join(parts[:3]),
+                'content': '\n'.join(parts),
+                'url': f"https://www.wikidata.org/wiki/{entity_id}",
+                'source': 'wikidata',
+                'score': 0.35,
+            })
+
+        return entries
+
+
+# ──────────────────── OpenAlex scraper ────────────────────
+
+class OpenAlexScraper:
+    """Recherche OpenAlex pour des publications scientifiques agricoles.
+
+    API gratuite, sans clef. Couvre 250M+ publications dont l'agriculture.
+    """
+
+    def __init__(self):
+        self.base_url = "https://api.openalex.org"
+
+    def search(self, query, results=5):
+        """Recherche des articles scientifiques sur OpenAlex."""
+        import requests as req
+
+        try:
+            resp = req.get(
+                f"{self.base_url}/works",
+                params={
+                    'search': query,
+                    'per_page': results,
+                    'sort': 'relevance_score:desc',
+                    'filter': 'is_paratext:false',
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            logger.warning(f"OpenAlex search error: {e}")
+            return []
+
+        entries = []
+        for work in data.get('results', []):
+            title = work.get('title', '')
+            if not title:
+                continue
+
+            # Résumé (OpenAlex utilise un index inversé)
+            abstract_idx = work.get('abstract_inverted_index', {})
+            abstract = self._decode_abstract(abstract_idx) if abstract_idx else ''
+
+            # Auteurs
+            authorships = work.get('authorships', [])
+            authors = [a.get('author', {}).get('display_name', '')
+                       for a in authorships[:3] if a.get('author')]
+
+            # Métadonnées
+            pub_year = work.get('publication_year', '')
+            doi = work.get('doi', '')
+            url = (
+                work.get('primary_location', {}).get('landing_page_url', '')
+                or doi or ''
+            )
+            cited_by = work.get('cited_by_count', 0)
+
+            # Domaines scientifiques
+            concepts = [c.get('display_name', '')
+                        for c in work.get('concepts', [])[:3]]
+
+            content = f"{title}.\n"
+            if abstract:
+                content += abstract[:400] + '\n'
+            if authors:
+                content += f"Auteurs: {', '.join(authors)}\n"
+            if concepts:
+                content += f"Domaines: {', '.join(concepts)}\n"
+            if pub_year:
+                content += f"Année: {pub_year} | Cité {cited_by} fois"
+
+            entries.append({
+                'title': f"📄 {title}",
+                'summary': abstract[:300] or title,
+                'content': content,
+                'url': url,
+                'source': 'openalex',
+                'score': 0.28,
+            })
+
+        return entries
+
+    @staticmethod
+    def _decode_abstract(inverted_index):
+        """Decode un index inversé OpenAlex en texte lisible."""
+        if not inverted_index:
+            return ''
+        try:
+            pairs = []
+            for word, positions in inverted_index.items():
+                for pos in positions:
+                    pairs.append((pos, word))
+            pairs.sort(key=lambda x: x[0])
+            return ' '.join(word for _, word in pairs)
+        except Exception:
+            return ''
+
+
 # ──────────────────── TF‑IDF Engine (moteur principal) ────────────────────
 
 class TfidfEngine:
@@ -477,14 +692,18 @@ class KnowledgeBase:
     """
     Moteur de connaissances Agrotech.
 
-    Ordre de recherche :
-      1. ChromaDB (si activee + deps installees)
-      2. TF‑IDF  (toujours dispo avec scikit-learn)
-      3. Wikipedia live (toujours dispo)
+    Sources (en parallele) :
+      1. ChromaDB     → embeddings vectoriels (optionnel)
+      2. TF‑IDF       → documents indexes (toujours)
+      3. Wikipedia    → articles encyclopediques (direct API)
+      4. Wikidata     → donnees structurees des plantes (nom scientifique, maladies...)
+      5. OpenAlex     → publications scientifiques agricoles
     """
 
     def __init__(self):
         self.wiki = WikipediaScraper()
+        self.wikidata = WikidataScraper()
+        self.openalex = OpenAlexScraper()
         self.tfidf = TfidfEngine()
         self.chroma = ChromaEngine()
 
@@ -526,34 +745,45 @@ class KnowledgeBase:
 
     def search(self, query, top_k=5, min_score=0.1):
         """
-        Recherche multi-niveaux :
-        1. ChromaDB (embeddings vectoriels) — si installe + active
-        2. TF‑IDF (documents indexes) — toujours dispo
-        3. Wikipedia live — toujours dispo
+        Recherche multi-sources :
+        1. ChromaDB       → embeddings vectoriels
+        2. TF‑IDF         → corpus local indexe
+        3. Wikipedia      → articles encyclopediques
+        4. Wikidata       → donnees structurees (noms scientifiques, maladies...)
+        5. OpenAlex       → publications scientifiques
         """
         results = []
         seen_titles = set()
 
-        # Niveau 1 : ChromaDB (optionnel, performant)
+        # ── Sources locales (rapides) ──
+
+        # Niveau 1 : ChromaDB (optionnel)
         if self.chroma.is_available():
-            chroma_results = self.chroma.search(query, top_k)
-            for r in chroma_results:
-                if r.get('title') not in seen_titles:
-                    seen_titles.add(r['title'])
-                    results.append(r)
+            try:
+                for r in self.chroma.search(query, top_k):
+                    t = r.get('title', '')
+                    if t not in seen_titles:
+                        seen_titles.add(t)
+                        results.append(r)
+            except Exception as e:
+                logger.warning(f"ChromaDB error: {e}")
 
-        # Niveau 2 : TF‑IDF (moteur principal, toujours dispo)
+        # Niveau 2 : TF‑IDF (corpus local)
         if self.tfidf.count > 0:
-            tfidf_results = self.tfidf.search(query, top_k, min_score)
-            for r in tfidf_results:
-                if r.get('title') not in seen_titles:
-                    seen_titles.add(r['title'])
-                    results.append(r)
+            try:
+                for r in self.tfidf.search(query, top_k, min_score):
+                    t = r.get('title', '')
+                    if t not in seen_titles:
+                        seen_titles.add(t)
+                        results.append(r)
+            except Exception as e:
+                logger.warning(f"TF-IDF error: {e}")
 
-        # Niveau 3 : Wikipedia live (complement)
+        # ── Sources live (API externes, court timeout) ──
+
+        # Niveau 3 : Wikipedia live
         try:
-            wiki_results = self.wiki.search(query, results=top_k)
-            for w in wiki_results:
+            for w in self.wiki.search(query, results=top_k):
                 title = w.get('title', '')
                 if title not in seen_titles:
                     seen_titles.add(title)
@@ -565,7 +795,39 @@ class KnowledgeBase:
                         'url': w.get('url', ''),
                     })
         except Exception as e:
-            logger.warning(f"Wikipedia live error: {e}")
+            logger.warning(f"Wikipedia error: {e}")
+
+        # Niveau 4 : Wikidata (donnees structurees des plantes)
+        try:
+            for wd in self.wikidata.search(query, results=3):
+                title = wd.get('title', '')
+                if title not in seen_titles:
+                    seen_titles.add(title)
+                    results.append({
+                        'title': title,
+                        'content': (wd.get('summary', '') or wd.get('content', ''))[:500],
+                        'score': 0.35,
+                        'source': 'wikidata',
+                        'url': wd.get('url', ''),
+                    })
+        except Exception as e:
+            logger.warning(f"Wikidata error: {e}")
+
+        # Niveau 5 : OpenAlex (publications scientifiques)
+        try:
+            for oa in self.openalex.search(query, results=3):
+                title = oa.get('title', '')
+                if title not in seen_titles:
+                    seen_titles.add(title)
+                    results.append({
+                        'title': title,
+                        'content': (oa.get('summary', '') or oa.get('content', ''))[:500],
+                        'score': 0.28,
+                        'source': 'openalex',
+                        'url': oa.get('url', ''),
+                    })
+        except Exception as e:
+            logger.warning(f"OpenAlex error: {e}")
 
         # Trier par score descendant
         results.sort(key=lambda x: x.get('score', 0), reverse=True)
@@ -622,5 +884,7 @@ class KnowledgeBase:
             'has_chroma': HAS_CHROMA,
             'has_transformers': HAS_TRANSFORMERS,
             'chroma_enabled': CHROMA_ENABLED,
-            'mode': 'tfidf' if not self.chroma.is_available() else 'chroma',
+            'sources_wikidata': True,
+            'sources_openalex': True,
+            'mode': 'multi_sources' if not self.chroma.is_available() else 'chroma+multi',
         }

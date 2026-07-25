@@ -259,7 +259,7 @@ class QueryEngine:
         return f"D'après {title} : {content}"
 
     def _synthesize_answer(self, query, results):
-        """Génère une réponse lisible à partir des résultats."""
+        """Génère une réponse lisible à partir des résultats (multi-sources)."""
         if not results:
             return "Je n'ai pas trouvé d'information sur cette requête."
 
@@ -270,9 +270,22 @@ class QueryEngine:
             if title in seen_titles:
                 continue
             seen_titles.add(title)
-            content = r.get('content', '')[:200]
+            content = r.get('content', '')[:300]
             source = r.get('source', 'wikipedia')
-            parts.append(f"📖 **{title}**\n{content}\n")
+
+            # Émoji selon la source
+            emoji = {'wikipedia_live': '📖', 'wikidata': '📊', 'openalex': '📄'}.get(source, '📎')
+            parts.append(f"{emoji} **{title}**\n{content}\n")
+
+        # Ajouter le nombre total de sources
+        total = len(results)
+        if total > 3:
+            sources_count = {}
+            for r in results:
+                s = r.get('source', '?')
+                sources_count[s] = sources_count.get(s, 0) + 1
+            detail = ', '.join(f"{c} {s.replace('_live', '').replace('_', ' ')}" for s, c in sources_count.items())
+            parts.append(f"\n_🔍 {total} résultats trouvés : {detail}_")
 
         return '\n'.join(parts)
 
