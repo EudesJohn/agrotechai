@@ -14,6 +14,7 @@ mangum
 numpy
 scikit-learn
 Pillow>=10.0.0
+wikipedia
 wikipedia-api
 
 # Deps optionnelles (ralentissent le cold start Vercel)
