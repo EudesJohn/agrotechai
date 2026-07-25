@@ -100,6 +100,112 @@ HEALTH_KEYWORDS = {
 }
 
 
+# ──────────────────── Correcteur orthographique flou ─────────────
+
+def _build_vocab():
+    """Construit le vocabulaire connu (plantes, symptomes, mots-cles)."""
+    words = set()
+    # Plantes SPECIFIC_PLANTS
+    plants_raw = [
+        "neem", "moringa", "aloe vera", "gingembre", "curcuma",
+        "cotonnier", "mais", "riz", "manioc", "igname", "arachide",
+        "niebe", "sorgho", "millet", "tomate", "oignon", "piment",
+        "aubergine", "gombo", "chou", "laitue", "carotte",
+        "haricot", "soja", "palmier a huile", "cacaoyer", "cafier",
+        "anacardier", "agrume", "manguier", "bananier", "ananas",
+        "patate douce", "taro", "fonio",
+    ]
+    for p in plants_raw:
+        for w in p.split():
+            if len(w) > 3:
+                words.add(w.lower())
+    # Plantes des REMEDIES
+    for plant_list in REMEDIES.values():
+        for p in plant_list:
+            for w in p.split():
+                if len(w) > 3:
+                    words.add(w.lower())
+    # Symptomes
+    for s in REMEDIES:
+        for w in s.split():
+            if len(w) > 3:
+                words.add(w.lower())
+    # Mots-cles agricoles
+    agri_words = [
+        "plante", "culture", "agricole", "agriculture", "cultiver",
+        "recolte", "sol", "engrais", "irrigation", "pesticide",
+        "maladie", "traitement", "phytotherapie", "medicinal",
+        "remède", "remede", "naturel", "bienfait", "propriete",
+        "guerir", "soigner", "soulager", "therapeutique",
+        "plante", "feuille", "fleur", "fruit", "graine", "racine",
+        "plantation", "semer", "arroser", "recolter", "fertiliser",
+        "variete", "espece", "botanique", "jardin", "potager",
+        "champ", "champs", "verger", "pépinière", "pépiniere",
+        "application", "pulverisation", "lutte", "biologique",
+        "insecte", "parasite", "ravageur", "phytopathologie",
+    ]
+    for w in agri_words:
+        if len(w) > 3:
+            words.add(w.lower())
+    return words
+
+
+_VOCAB = _build_vocab()
+
+
+def _levenshtein(a, b):
+    """Distance de Levenshtein entre deux chaines."""
+    if len(a) < len(b):
+        a, b = b, a
+    if not b:
+        return len(a)
+    prev = range(len(b) + 1)
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            cost = 0 if ca == cb else 1
+            curr.append(min(curr[j] + 1, prev[j + 1] + 1, prev[j] + cost))
+        prev = curr
+    return prev[-1]
+
+
+def _correct_spelling(query, max_dist=2):
+    """
+    Corrige les fautes de frappe dans la requete en utilisant
+    la distance de Levenshtein sur le vocabulaire connu.
+
+    Exemples :
+      "gingembre" (deja correct)  → "gingembre"
+      "ginjembre" (faute)         → "gingembre"
+      "origan"                    → "origan" (reste tel quel si inconnu)
+    """
+    words = query.lower().split()
+    corrected = []
+    for w in words:
+        if len(w) <= 3 or w in _VOCAB:
+            # Mot court ou deja connu → inchangé
+            corrected.append(w)
+            continue
+        # Chercher le plus proche dans le vocabulaire
+        best = None
+        best_dist = max_dist + 1
+        for v in _VOCAB:
+            if abs(len(v) - len(w)) > max_dist:
+                continue  # economie : les mots de taille tres differente
+            d = _levenshtein(w, v)
+            if d < best_dist:
+                best_dist = d
+                best = v
+        if best and best_dist <= max_dist:
+            corrected.append(best)
+        else:
+            corrected.append(w)
+    result = ' '.join(corrected)
+    if result != query.lower():
+        logger.info(f"🔤 Correction orthographique : '{query}' → '{result}'")
+    return result
+
+
 # ──────────────────── Dependances optionnelles ────────────────────
 
 HAS_WIKIPEDIA = False
@@ -802,6 +908,9 @@ class KnowledgeBase:
         3. OpenAlex  → publications scientifiques
         4. Trefle    → base botanique
         """
+        # Correction orthographique (fautes de frappe)
+        query = _correct_spelling(query)
+
         results = []
         seen_titles = set()
 
