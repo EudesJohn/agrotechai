@@ -374,13 +374,16 @@ class WikidataScraper:
         if not entities:
             return []
 
+        # Mots-cles nettoyes pour le filtrage (respecte les diacritiques)
+        clean_lower = [w.lower() for w in clean]
+
         entries = []
         for entity in entities:
             entity_id = entity.get('id', '')
-            label = entity.get('label', query)
+            search_label = entity.get('label', query) or ''
             description = entity.get('description', '')
 
-            # 2. Récupérer toutes les propriétés de l'entité
+            # 2. Récupérer les propriétés + labels FR de l'entité
             try:
                 resp = session.get(self.api_base, params={
                     'action': 'wbgetentities',
@@ -394,10 +397,34 @@ class WikidataScraper:
             except Exception:
                 continue
 
+            # Extraire le label en français depuis la réponse complète
+            try:
+                labels = entity_data['entities'][entity_id].get('labels', {})
+                fr_label = labels.get(self.lang, {}).get('value', '') or ''
+            except (KeyError, IndexError, AttributeError):
+                fr_label = search_label
+
+            # Filtre par label français : doit contenir au moins un mot-clé
+            # Ex: "maïs" → garder "Maïs" (Q11575, label fr="Maïs"),
+            #              rejeter "maison" (Q41176, label fr="maison")
+            if not any(kw in fr_label.lower() for kw in clean_lower):
+                continue
+
+            # Utiliser le label FR pour l'affichage
+            label = fr_label or search_label
+
             claims = {}
             try:
                 claims = entity_data['entities'][entity_id].get('claims', {})
             except (KeyError, IndexError):
+                pass
+
+            # Récupérer la description française
+            try:
+                fr_desc = entity_data['entities'][entity_id].get('descriptions', {}).get(self.lang, {}).get('value', '')
+                if fr_desc:
+                    description = fr_desc
+            except (KeyError, IndexError, AttributeError):
                 pass
 
             # 3. Extraire les propriétés pertinentes pour l'agriculture
