@@ -59,10 +59,9 @@ def diagnose_plant(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    engine = get_query_engine()
-
     # Decoder l'image base64 → fichier temp pour OpenCV
     try:
+        engine = get_query_engine()
         if ';base64,' in image_data:
             raw_b64 = image_data.split(';base64,')[1]
         else:
@@ -133,9 +132,8 @@ def ai_search(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    engine = get_query_engine()
-
     try:
+        engine = get_query_engine()
         local_result = engine.search(query, top_k=5)
 
         if local_result.get('success') and local_result.get('results'):
