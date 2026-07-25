@@ -86,9 +86,10 @@ const askGemini = async () => {
     const response = await api.post('ai_search/', { query: searchQuery.value })
     if (response.data && response.data.answer) {
       aiAnswer.value = response.data.answer
-      // Smooth reveal
+      // Smooth reveal — guarder si l'element existe
       setTimeout(() => {
-        gsap.from(".ai-response-box", { opacity: 0, y: 20, duration: 0.8, ease: "power2.out" })
+        const el = document.querySelector(".modal-ai-response")
+        if (el) gsap.from(el, { opacity: 0, y: 20, duration: 0.8, ease: "power2.out" })
       }, 100)
     }
   } catch (err) {
@@ -345,8 +346,22 @@ const sharePost = async (post) => {
       console.log("Share failed")
     }
   } else {
-    await navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`)
-    alert("Lien copié !")
+    try {
+      await navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`)
+      alert("Lien copié !")
+    } catch (e) {
+      console.log("Copy failed:", e)
+    }
+  }
+}
+
+const copyAiAnswer = () => {
+  try {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(aiAnswer.value)
+    }
+  } catch (e) {
+    console.log("Copy failed:", e)
   }
 }
 
@@ -558,7 +573,7 @@ onMounted(() => {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 4-4 4s-4-2-4-4 2-4 4-4z"/><path d="M12 14c-4 0-6 2-6 4v2h12v-2c0-2-2-4-6-4z"/></svg>
                     <span>Analyse Agrotech AI</span>
                   </div>
-                  <button class="ai-copy-btn" @click="navigator.clipboard?.writeText(aiAnswer)">
+                  <button class="ai-copy-btn" @click="copyAiAnswer">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     Copier
                   </button>
