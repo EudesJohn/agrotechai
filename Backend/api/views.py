@@ -43,6 +43,7 @@ def get_query_engine():
 # ── Diagnostiquer une plante par image ────────────────────────────
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([AIThrottle])
 def diagnose_plant(request):
@@ -118,6 +119,7 @@ def diagnose_plant(request):
 # ── Recherche agricole intelligente ────────────────────────────────
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([AIThrottle])
 def ai_search(request):
